@@ -16,8 +16,9 @@ const firebaseAppCjs = path.resolve(
 );
 const firebaseAuthRn = path.resolve(
   __dirname,
-  'node_modules/firebase/node_modules/@firebase/auth/dist/rn/index.js'
+  'node_modules/@firebase/auth/dist/rn/index.js'
 );
+
 
 const originalResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {

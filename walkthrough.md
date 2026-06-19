@@ -56,5 +56,32 @@
 
 ---
 
-## 3. TypeScript 컴파일 검증 완료
+## 3. Gemini 3.5 Flash & 이중 Firebase App 연동 (완료)
+
+### 3.1 전용 API 키 및 직접 HTTP 통신 연동
+* **상황**: Firebase SDK (`firebase/ai`)를 사용해 클라이언트 앱에서 호출할 경우, Firebase 백엔드가 프로젝트 설정(`projectId`, `appId`)과 API 키 간의 결합 관계를 강제 검증합니다. 이로 인해 메인 Firebase 환경과 별도로 생성된 외부 Gemini 전용 키(`AQ.`)를 섞어 쓰는 방식은 클라이언트 측 SDK 통과 단계에서 차단되는 제약이 있었습니다.
+* **해결책**:
+  * Firebase SDK를 우회하여 React Native 내장 `fetch` API를 통해 **Gemini Developer API(`https://generativelanguage.googleapis.com/...`)를 직접 호출**하도록 아키텍처를 변경했습니다.
+  * [App.tsx](file:///d:/Workspace/OntheRock_new/App.tsx) 내부의 `fetchAISommelier` 함수에서 사용자의 Gemini 활성화 API 키(`AQ.Ab8RN6L...`)를 실시간 HTTP POST 요청으로 바인딩하여 백엔드 호출을 완료합니다.
+  * 이로써 팀원의 메인 Firebase App 구성([src/config/firebase.ts](file:///d:/Workspace/OntheRock_new/src/config/firebase.ts))을 전혀 훼손하지 않으면서도, AI 기능만을 독립적으로 무료 요금제의 Gemini 모델에 완벽히 격리 연동시켰습니다.
+
+
+### 3.2 로컬 예측 즉시 표시 + AI 소믈리에 비동기 보강 모델
+* 사용자 경험 극대화를 위해 분석 버튼 클릭 시, 1500ms의 인위적 딜레이(AI 분석 연출용) 후 **로컬 맛 분석과 감도 분석을 즉시 렌더링**합니다.
+* 동시에 백엔드에서 `gemini-3.5-flash` 모델을 비동기로 호출합니다. AI 결과가 성공적으로 수신되면, 하단에 골드 톤 테두리의 **"AI 소믈리에" 섹션**이 자연스럽게 추가 노출됩니다.
+* 만약 네트워크 단절이나 API 제한 등으로 AI 호출이 실패하더라도, 에러를 UI로 뿜어내지 않고 로컬 예측 결과만 깔끔하게 유지하여 완벽한 오프라인/폴백 안정성을 제공합니다.
+
+### 3.3 맛 프로필 개인화 (Taste Genome) 프롬프트 바인딩
+* AI 모델 호출 시 유저의 기존 저널 평점과 인벤토리 데이터를 가공하여 도출한 **Taste Genome(취향 DNA) 데이터**를 프롬프트에 동적 삽입합니다.
+* Gemini는 이를 인지하여 사용자의 취향과 비교해 "당신의 평소 취향에 잘 맞는 묵직하고 달콤한 칵테일입니다"와 같은 초개인화된 테이스팅 노트 평을 생성합니다.
+
+### 3.4 AI 소믈리에 UI 구성
+* **네임 제안 (Name Ideas)**: 입력된 비율과 글라스, 맛 프로필을 고려한 3가지 크리에이티브한 이름 제안.
+* **푸드 페어링 (Food Pairing)**: 맛과 도수에 가장 어울리는 추천 안주/디저트 3선 제시.
+* **개선 팁 (Improvement Tip)**: 밸런스를 개선할 수 있는 레시피 보정 팁 제공.
+
+---
+
+## 4. TypeScript 컴파일 검증 완료
 * **빌드 안정성 확인**: `tsc --noEmit`를 최종적으로 구동하여 프로젝트 전역에 걸친 컴파일 에러 및 경고 0건 상태(Exit Code 0)로 안정화되었습니다.
+

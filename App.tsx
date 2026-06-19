@@ -2838,6 +2838,86 @@ function generateTastingNote(p: FlavorP, lang: 'ko' | 'en'): string {
   }
 }
 
+// ── Gemini AI 소믈리에 ─────────────────────────────────────────
+interface AISommelierResult {
+  tastingNote: string;
+  nameSuggestions: string[];
+  foodPairing: string[];
+  improvementTip: string;
+}
+
+async function fetchAISommelier(
+  ingredients: { name: string; parts: number }[],
+  profile: FlavorP,
+  glassType: string,
+  iceType: string,
+  abv: number,
+  genome: FlavorP | null,
+  lang: 'ko' | 'en',
+): Promise<AISommelierResult | null> {
+  try {
+    const genomeContext = genome
+      ? `\nUser's personal taste DNA: sweet=${genome.sweet}, sour=${genome.sour}, bitter=${genome.bitter}, body=${genome.body}, aroma=${genome.aroma}. Compare the cocktail to their personal preference and mention how well it matches.`
+      : '';
+
+    const prompt = `You are a world-class sommelier and mixologist. Analyze this cocktail and respond in ${lang === 'ko' ? 'Korean' : 'English'}.
+
+Cocktail:
+- Ingredients: ${ingredients.map(i => `${i.name} (${i.parts} parts)`).join(', ')}
+- Glass: ${glassType}
+- Ice: ${iceType}
+- ABV: ~${Math.round(abv)}%
+- Flavor profile (0-5 scale): sweet=${profile.sweet}, sour=${profile.sour}, bitter=${profile.bitter}, body=${profile.body}, aroma=${profile.aroma}
+${genomeContext}
+
+Respond in this exact JSON format:
+{
+  "tastingNote": "A vivid 2-3 sentence tasting note describing the drinking experience",
+  "nameSuggestions": ["Creative cocktail name 1", "Name 2", "Name 3"],
+  "foodPairing": ["Food 1", "Food 2", "Food 3"],
+  "improvementTip": "One specific actionable tip to improve this mix"
+}`;
+
+    const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{ text: prompt }]
+        }],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0.8,
+          maxOutputTokens: 8192,
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.warn('[AI Sommelier] API error:', response.status, errorText);
+      return null;
+    }
+
+    const data = await response.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) {
+      console.warn('[AI Sommelier] Empty response from Gemini');
+      return null;
+    }
+
+    return JSON.parse(text) as AISommelierResult;
+  } catch (e) {
+    console.warn('[AI Sommelier] Error:', e);
+    return null;
+  }
+}
+
 function genFlavorTags(p: FlavorP, lang: Lang): string[] {
   const tags: string[] = [];
   if (p.sweet  >= 4) tags.push(lang === 'ko' ? '#달콤한'   : '#Sweet');
@@ -5529,6 +5609,10 @@ function MixScreen() {
   const [analyzing,  setAnalyzing]   = useState(false);
   const [prediction, setPrediction]  = useState<FlavorP | null>(null);
   const [adjustment, setAdjustment]  = useState<FlavorP>({ sweet:0, sour:0, bitter:0, body:0, aroma:0 });
+  const [aiResult,   setAiResult]    = useState<AISommelierResult | null>(null);
+  const [aiLoading,  setAiLoading]   = useState(false);
+  const [aiError,    setAiError]     = useState<string | null>(null);
+
   const [journalRating, setJournalRating] = useState(5);
   const [savedFlash, setSavedFlash]  = useState(false);
   const [pickerOpen, setPickerOpen]  = useState(false);
@@ -5633,6 +5717,8 @@ function MixScreen() {
     setAnalyzing(true);
     setPrediction(null);
     setAdjustment({ sweet:0, sour:0, bitter:0, body:0, aroma:0 });
+    setAiResult(null);
+    setAiError(null);
     
     setTimeout(() => {
       let totalParts = 0;
@@ -5667,14 +5753,45 @@ function MixScreen() {
 
       const dilution = 1 / (1 + iceEffCount(iceType, iceCount) * 0.08);
 
-      setPrediction({
+      const localResult: FlavorP = {
         sweet:  Math.min(5, Math.max(0, Math.round(rawSweet  * dilution))),
         sour:   Math.min(5, Math.max(0, Math.round(rawSour   * dilution))),
         bitter: Math.min(5, Math.max(0, Math.round(rawBitter * dilution))),
         body:   Math.min(5, Math.max(0, Math.round(rawBody   * dilution))),
         aroma:  Math.min(5, Math.max(0, Math.round(rawAroma  * dilution))),
-      });
+      };
+      setPrediction(localResult);
       setAnalyzing(false);
+
+      // ── Gemini 비동기 보강 (실패 시 로컬 결과 유지) ──
+      setAiLoading(true);
+      const genome = computeGenomeProfile(inventoryItems, journalEntries);
+      const { glassType: gt, iceType: it } = useMixStore.getState();
+      // ABV 계산 (MixSimulator 밖이므로 직접 계산)
+      let abvParts = 0; let abvSum = 0;
+      selections.forEach(sel => {
+        const ing = selected.find(x => x.id === sel.ingredientId);
+        if (ing) { abvParts += sel.parts; abvSum += sel.parts * ing.abv; }
+      });
+      const estimatedAbv = abvParts > 0 ? (abvSum / abvParts) * dilution : 0;
+      fetchAISommelier(
+        selections.map(sel => {
+          const ing = selected.find(x => x.id === sel.ingredientId);
+          return { name: ing ? (lang === 'ko' ? ing.nameKo : ing.name) : '', parts: sel.parts };
+        }),
+        localResult,
+        gt,
+        it,
+        estimatedAbv,
+        genome,
+        lang,
+      ).then(result => {
+        if (result) {
+          setAiResult(result);
+        } else {
+          setAiError(lang === 'ko' ? 'AI 분석에 실패했습니다. API 키 권한 설정을 확인해 주세요.' : 'AI analysis failed. Please check your API key restrictions.');
+        }
+      }).finally(() => setAiLoading(false));
     }, 1500);
   };
 
@@ -5909,6 +6026,101 @@ function MixScreen() {
                   "{generateTastingNote(adjustedProfile, lang)}"
                 </Text>
               </View>
+
+              {/* ── AI 소믈리에 (Gemini 3.5 Flash) ── */}
+              {(aiLoading || aiResult || aiError) && (
+                <View style={{
+                  marginTop: 16, width: '100%', padding: 14,
+                  borderRadius: 12, borderWidth: 1,
+                  borderColor: isDark ? 'rgba(201,168,76,0.35)' : 'rgba(201,168,76,0.25)',
+                  backgroundColor: isDark ? 'rgba(201,168,76,0.06)' : 'rgba(201,168,76,0.04)',
+                }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                    <Text style={{ fontSize: 13 }}>🤖</Text>
+                    <Text style={{
+                      fontSize: 11, fontWeight: '800', letterSpacing: 0.8,
+                      color: '#c9a84c', textTransform: 'uppercase',
+                    }}>
+                      {lang === 'ko' ? 'AI 소믈리에' : 'AI SOMMELIER'}
+                    </Text>
+                    {aiLoading && (
+                      <ActivityIndicator size="small" color="#c9a84c" style={{ marginLeft: 4 }} />
+                    )}
+                  </View>
+
+                  {aiError && (
+                    <Text style={{ fontSize: 13, color: '#ef5350', lineHeight: 19 }}>
+                      {aiError}
+                    </Text>
+                  )}
+
+
+                  {aiResult && (
+                    <>
+                      {/* AI Tasting Note */}
+                      <Text style={{
+                        fontSize: 13, color: C.text, fontStyle: 'italic',
+                        lineHeight: 19, marginBottom: 12,
+                      }}>
+                        "{aiResult.tastingNote}"
+                      </Text>
+
+                      {/* Name Suggestions */}
+                      <Text style={{
+                        fontSize: 10, fontWeight: '700', color: C.textDim,
+                        letterSpacing: 0.6, marginBottom: 6,
+                      }}>
+                        {lang === 'ko' ? '이름 제안' : 'NAME IDEAS'}
+                      </Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+                        {aiResult.nameSuggestions.map(name => (
+                          <Text key={name} style={{
+                            fontSize: 12, color: '#c9a84c', fontWeight: '600',
+                            paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
+                            backgroundColor: isDark ? 'rgba(201,168,76,0.12)' : 'rgba(201,168,76,0.08)',
+                            borderWidth: 1, borderColor: 'rgba(201,168,76,0.22)',
+                          }}>
+                            {name}
+                          </Text>
+                        ))}
+                      </View>
+
+                      {/* Food Pairing */}
+                      <Text style={{
+                        fontSize: 10, fontWeight: '700', color: C.textDim,
+                        letterSpacing: 0.6, marginBottom: 6,
+                      }}>
+                        {lang === 'ko' ? '푸드 페어링' : 'FOOD PAIRING'}
+                      </Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+                        {aiResult.foodPairing.map(food => (
+                          <Text key={food} style={{
+                            fontSize: 12, color: C.text, fontWeight: '500',
+                            paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
+                            backgroundColor: C.surfaceHi, borderWidth: 1, borderColor: C.border,
+                          }}>
+                            🍽️ {food}
+                          </Text>
+                        ))}
+                      </View>
+
+                      {/* Improvement Tip */}
+                      <View style={{
+                        flexDirection: 'row', alignItems: 'flex-start', gap: 6,
+                        padding: 10, borderRadius: 8,
+                        backgroundColor: isDark ? 'rgba(255,184,48,0.08)' : 'rgba(255,184,48,0.06)',
+                      }}>
+                        <Text style={{ fontSize: 13 }}>💡</Text>
+                        <Text style={{
+                          fontSize: 12, color: C.text, lineHeight: 18, flex: 1,
+                        }}>
+                          {aiResult.improvementTip}
+                        </Text>
+                      </View>
+                    </>
+                  )}
+                </View>
+              )}
 
               {/* ── Ratio Adjustment ── */}
               <View style={{ width: '100%', marginTop: 18 }}>
@@ -8058,7 +8270,6 @@ function SpiritGridCell({ spirit }: { spirit: SearchSpirit }) {
 }
 
 function RecipeGridCell({ recipe, lang }: { recipe: Recipe; lang: Lang }) {
-  const C = useColors();
   const [failed, setFailed] = useState(false);
   const cellSize = Math.floor(SCREEN_W / 3);
   const showImg = !!recipe.heroApiName && !failed;
@@ -8081,7 +8292,7 @@ function RecipeGridCell({ recipe, lang }: { recipe: Recipe; lang: Lang }) {
   );
 }
 
-function ArchiveSpiritCard({ spirit, lang }: { spirit: SearchSpirit; lang: Lang }) {
+export function ArchiveSpiritCard({ spirit, lang }: { spirit: SearchSpirit; lang: Lang }) {
   const { savedSpiritIds, toggleSavedSpirit } = useAppStore();
   const C = useColors();
   const saved = savedSpiritIds.includes(spirit.id);
@@ -8116,7 +8327,7 @@ function ArchiveSpiritCard({ spirit, lang }: { spirit: SearchSpirit; lang: Lang 
   );
 }
 
-function ArchiveRecipeCard({ recipe, lang }: { recipe: Recipe; lang: Lang }) {
+export function ArchiveRecipeCard({ recipe, lang }: { recipe: Recipe; lang: Lang }) {
   const { savedRecipeIds, toggleSavedRecipe } = useAppStore();
   const C = useColors();
   const saved = savedRecipeIds.includes(recipe.id);
@@ -8361,6 +8572,24 @@ function ProfileScreen() {
               {lang === 'ko' ? '바 소개를 작성해보세요' : 'Add a bar description'}
             </Text>
           )}
+
+          {/* Edit Profile / Bar button */}
+          <TouchableOpacity onPress={openEdit}
+            style={{
+              paddingVertical: 6,
+              borderRadius: 8,
+              borderWidth: 1,
+              borderColor: C.border,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: C.surfaceHi,
+              marginBottom: 14,
+            }}>
+            <Text style={{ fontSize: 12, fontWeight: '700', color: C.text }}>
+              {lang === 'ko' ? '바 편집' : 'Edit Bar'}
+            </Text>
+          </TouchableOpacity>
+
 
           {/* View toggle — 아카이브 | 취향 DNA */}
           <View style={[styles.genomeToggle, { marginHorizontal: 0 }]}>
