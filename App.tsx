@@ -1112,12 +1112,14 @@ interface MixStore {
   iceCount: number;
   iceType: IceType;
   glassType: GlassType;
+  stirring: boolean;
   addPart: (id: string) => void;
   removePart: (id: string) => void;
   removeIngredient: (id: string) => void;
   setIceCount: (count: number | ((prev: number) => number)) => void;
   setIceType: (t: IceType) => void;
   setGlassType: (glass: GlassType) => void;
+  setStirring: (v: boolean) => void;
   clear: () => void;
 }
 const useMixStore = create<MixStore>((set) => ({
@@ -1125,6 +1127,7 @@ const useMixStore = create<MixStore>((set) => ({
   iceCount: 3,
   iceType: 'none',
   glassType: 'rocks',
+  stirring: false,
   addPart: (id) => set((s) => {
     const idx = s.selections.findIndex(x => x.ingredientId === id);
     if (idx > -1) {
@@ -1154,7 +1157,8 @@ const useMixStore = create<MixStore>((set) => ({
   })),
   setIceType: (t) => set({ iceType: t }),
   setGlassType: (glass) => set({ glassType: glass }),
-  clear: () => set({ selections: [], iceCount: 3, iceType: 'none', glassType: 'rocks' }),
+  setStirring: (v) => set({ stirring: v }),
+  clear: () => set({ selections: [], iceCount: 3, iceType: 'none', glassType: 'rocks', stirring: false }),
 }));
 
 function useSelectedIngredients() {
@@ -1600,6 +1604,9 @@ function SlidingTabContainer() {
     // Fallback: block any gesture starting inside the cabinet area on the home screen
     // (primary blocking is handled per-ShelfRow via blockTabSwipe PanResponder).
     onMoveShouldSetPanResponder: (_, gs) => {
+      if (useMixStore.getState().stirring) {
+        return false;
+      }
       if (idxRef.current === 0) {
         const { homeCabTop, homeCabH } = useAppStore.getState();
         if (homeCabTop > 0 && homeCabH > 0 &&
@@ -1973,12 +1980,13 @@ function WoodPlank({ shelfW, shelfThemeId: shelfThemeIdProp }: { shelfW: number;
 // PanResponder lives on a plain overlay View (not the Animated.View) so that
 // Android hit areas are always at the correct screen position.
 // ─────────────────────────────────────────────────────────────────
-function ShelfRow({ plankY, items, focusedId, onTapBottle, draggingId, onDragStart, onDragEnd }: {
+function ShelfRow({ plankY, items, focusedId, onTapBottle, draggingId, onDragStart, onDragEnd, onPageChange }: {
   plankY: number; items: InventoryItem[];
   focusedId: string | null; onTapBottle: (item: InventoryItem) => void;
   draggingId: string | null;
   onDragStart: (id: string) => void;
-  onDragEnd: (id: string, slotDelta: number) => void;
+  onDragEnd: (id: string, releaseX: number, releaseY: number) => void;
+  onPageChange?: (page: number) => void;
 }) {
   const isDark = useIsDark();
   const shelfW = SCREEN_W - SHELF_MX * 2;
@@ -1996,23 +2004,39 @@ function ShelfRow({ plankY, items, focusedId, onTapBottle, draggingId, onDragSta
   const pageCountRef    = useRef(1);
   const [shelfPage, setShelfPage] = useState(0);
 
+  const dragTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Update pageCount every render so PanResponder reads the latest value via .current
   pageCountRef.current = Math.max(1, Math.ceil(items.length / SLOT_COUNT));
 
-  const cbRef = useRef({ onDragStart, onDragEnd, onTapBottle });
-  useEffect(() => { cbRef.current = { onDragStart, onDragEnd, onTapBottle }; });
+  const cbRef = useRef({ onDragStart, onDragEnd, onTapBottle, onPageChange });
+  useEffect(() => { cbRef.current = { onDragStart, onDragEnd, onTapBottle, onPageChange }; });
 
   const panResponder = useRef(PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onPanResponderGrant: (_, gs) => {
+      if (dragTimerRef.current) {
+        clearTimeout(dragTimerRef.current);
+        dragTimerRef.current = null;
+      }
       // gs.x0 = absolute screen X — reliable on both iOS and Android.
       const localX      = gs.x0 - SHELF_MX;
       const slotInPage  = Math.floor(localX / SLOT_W);
       const fullSlotIdx = shelfSwipeState.current.page * SLOT_COUNT + slotInPage;
-      touchItemRef.current  = itemsRef.current[fullSlotIdx] ?? null;
+      const touched     = itemsRef.current[fullSlotIdx] ?? null;
+      touchItemRef.current  = touched;
       isDraggingRef.current = false;
       isSlidingRef.current  = false;
       sharedDragAnim.setValue({ x: 0, y: 0 });
+
+      if (touched) {
+        dragTimerRef.current = setTimeout(() => {
+          if (!isSlidingRef.current && !isDraggingRef.current) {
+            isDraggingRef.current = true;
+            cbRef.current.onDragStart(touched.id);
+          }
+        }, 260);
+      }
     },
     onPanResponderMove: (_, gs) => {
       if (isSlidingRef.current) {
@@ -2021,23 +2045,39 @@ function ShelfRow({ plankY, items, focusedId, onTapBottle, draggingId, onDragSta
         shelfSlideAnim.setValue(Math.max(-mp * PAGE_W, Math.min(0, -page * PAGE_W + gs.dx)));
         return;
       }
-      if (!isDraggingRef.current) {
-        if (Math.abs(gs.dx) > 8 && Math.abs(gs.dx) > Math.abs(gs.dy)) {
-          if (!touchItemRef.current) {
-            isSlidingRef.current = true;
-            const { page } = shelfSwipeState.current;
-            const mp = pageCountRef.current - 1;
-            shelfSlideAnim.setValue(Math.max(-mp * PAGE_W, Math.min(0, -page * PAGE_W + gs.dx)));
-            return;
-          }
-          isDraggingRef.current = true;
-          cbRef.current.onDragStart(touchItemRef.current.id);
-        }
+      if (isDraggingRef.current) {
+        sharedDragAnim.setValue({ x: gs.dx, y: gs.dy });
         return;
       }
-      sharedDragAnim.setValue({ x: gs.dx, y: gs.dy * 0.3 });
+
+      const absDx = Math.abs(gs.dx);
+      const absDy = Math.abs(gs.dy);
+      if (absDx > 6 || absDy > 6) {
+        if (dragTimerRef.current) {
+          clearTimeout(dragTimerRef.current);
+          dragTimerRef.current = null;
+        }
+
+        if (absDx > absDy) {
+          isSlidingRef.current = true;
+          const { page } = shelfSwipeState.current;
+          const mp = pageCountRef.current - 1;
+          shelfSlideAnim.setValue(Math.max(-mp * PAGE_W, Math.min(0, -page * PAGE_W + gs.dx)));
+        } else {
+          if (touchItemRef.current) {
+            isDraggingRef.current = true;
+            cbRef.current.onDragStart(touchItemRef.current.id);
+            sharedDragAnim.setValue({ x: gs.dx, y: gs.dy });
+          }
+        }
+      }
     },
     onPanResponderRelease: (_, gs) => {
+      if (dragTimerRef.current) {
+        clearTimeout(dragTimerRef.current);
+        dragTimerRef.current = null;
+      }
+
       if (isSlidingRef.current) {
         isSlidingRef.current = false;
         touchItemRef.current = null;
@@ -2049,27 +2089,37 @@ function ShelfRow({ plankY, items, focusedId, onTapBottle, draggingId, onDragSta
         else if (gs.dx >  DIST || gs.vx >  VEL) newPage = Math.max(0, page - 1);
         shelfSwipeState.current.page = newPage;
         setShelfPage(newPage);
+        cbRef.current.onPageChange?.(newPage);
         Animated.spring(shelfSlideAnim, { toValue: -newPage * PAGE_W, friction: 14, tension: 110, useNativeDriver: true }).start();
         return;
       }
+
       const wasDragging = isDraggingRef.current;
       const touched     = touchItemRef.current;
       isDraggingRef.current = false;
       touchItemRef.current  = null;
+
       if (wasDragging && touched) {
+        const releaseX = gs.x0 + gs.dx;
+        const releaseY = gs.y0 + gs.dy;
         Animated.spring(sharedDragAnim, { toValue: { x: 0, y: 0 }, useNativeDriver: true, friction: 10, tension: 80 })
-          .start(() => cbRef.current.onDragEnd(touched.id, Math.round(gs.dx / SLOT_W)));
+          .start(() => cbRef.current.onDragEnd(touched.id, releaseX, releaseY));
       } else if (!wasDragging && touched && Math.abs(gs.dx) < 8 && Math.abs(gs.dy) < 8) {
         cbRef.current.onTapBottle(touched);
       }
     },
     onPanResponderTerminate: () => {
+      if (dragTimerRef.current) {
+        clearTimeout(dragTimerRef.current);
+        dragTimerRef.current = null;
+      }
+
       if (isSlidingRef.current) {
         isSlidingRef.current = false;
         Animated.spring(shelfSlideAnim, { toValue: -shelfSwipeState.current.page * PAGE_W, friction: 14, tension: 110, useNativeDriver: true }).start();
       } else if (isDraggingRef.current && touchItemRef.current) {
         sharedDragAnim.setValue({ x: 0, y: 0 });
-        cbRef.current.onDragEnd(touchItemRef.current.id, 0);
+        cbRef.current.onDragEnd(touchItemRef.current.id, 0, 0);
       }
       isDraggingRef.current = false;
       touchItemRef.current  = null;
@@ -2078,6 +2128,7 @@ function ShelfRow({ plankY, items, focusedId, onTapBottle, draggingId, onDragSta
   })).current;
 
   const pageCount = pageCountRef.current;
+  const hasDraggingItem = draggingId && items.some(it => it.id === draggingId);
 
   return (
     <View style={{
@@ -2087,6 +2138,7 @@ function ShelfRow({ plankY, items, focusedId, onTapBottle, draggingId, onDragSta
       right: SHELF_MX,
       height: BOTTLE_H + PLANK_H + 6,
       overflow: 'visible',
+      zIndex: hasDraggingItem ? 100 : 1,
     }}>
       {/* Wood plank */}
       <View style={{ position: 'absolute', top: BOTTLE_H - SHELF_OVERLAP, left: 0, right: 0 }}>
@@ -2145,6 +2197,27 @@ function ShelfRow({ plankY, items, focusedId, onTapBottle, draggingId, onDragSta
               backgroundColor: shelfPage === i ? 'rgba(255,255,255,0.80)' : 'rgba(255,255,255,0.28)',
             }} />
           ))}
+        </View>
+      )}
+
+      {/* Left indicator arrow */}
+      {pageCount > 1 && shelfPage > 0 && (
+        <View pointerEvents="none" style={{
+          position: 'absolute', left: -10, top: BOTTLE_H / 2 - 12, zIndex: 10,
+          backgroundColor: 'rgba(0,0,0,0.5)', width: 24, height: 24, borderRadius: 12,
+          alignItems: 'center', justifyContent: 'center'
+        }}>
+          <Text style={{ color: '#fff', fontSize: 14, fontWeight: 'bold', marginTop: -2 }}>‹</Text>
+        </View>
+      )}
+      {/* Right indicator arrow */}
+      {pageCount > 1 && shelfPage < pageCount - 1 && (
+        <View pointerEvents="none" style={{
+          position: 'absolute', right: -10, top: BOTTLE_H / 2 - 12, zIndex: 10,
+          backgroundColor: 'rgba(0,0,0,0.5)', width: 24, height: 24, borderRadius: 12,
+          alignItems: 'center', justifyContent: 'center'
+        }}>
+          <Text style={{ color: '#fff', fontSize: 14, fontWeight: 'bold', marginTop: -2 }}>›</Text>
         </View>
       )}
     </View>
@@ -2608,7 +2681,7 @@ function CounterDecorations() {
 // ─────────────────────────────────────────────────────────────────
 // BOTTOM PANEL
 // ─────────────────────────────────────────────────────────────────
-function BottomPanel({ item, t, onClose }: { item: InventoryItem; t: Texts; onClose: () => void }) {
+function BottomPanel({ item, t, onClose, onRemove }: { item: InventoryItem; t: Texts; onClose: () => void; onRemove?: (id: string) => void }) {
   const { lang, updateInventoryItem, removeInventoryItem, logCocktailAttempt, awardNotePoints, cocktailAttemptDates } = useAppStore();
   const C        = useColors();
   const today    = new Date().toISOString().slice(0, 10);
@@ -2755,21 +2828,42 @@ function BottomPanel({ item, t, onClose }: { item: InventoryItem; t: Texts; onCl
       {/* Remove from Cabinet Button */}
       <TouchableOpacity
         onPress={() => {
-          Alert.alert(
-            lang === 'ko' ? '술병 제거' : 'Remove Bottle',
-            lang === 'ko' ? `정말 진열장에서 ${item.name}을(를) 치우시겠습니까?` : `Are you sure you want to remove ${item.name} from your bar cabinet?`,
-            [
-              { text: lang === 'ko' ? '취소' : 'Cancel', style: 'cancel' },
-              {
-                text: lang === 'ko' ? '치우기' : 'Remove',
-                style: 'destructive',
-                onPress: () => {
-                  removeInventoryItem(item.id);
-                  onClose();
-                }
+          const title = lang === 'ko' ? '술병 제거' : 'Remove Bottle';
+          const msg = lang === 'ko'
+            ? `정말 진열장에서 ${item.name}을(를) 치우시겠습니까?`
+            : `Are you sure you want to remove ${item.name} from your bar cabinet?`;
+
+          if (Platform.OS === 'web') {
+            const confirmed = window.confirm(`${title}\n\n${msg}`);
+            if (confirmed) {
+              if (onRemove) {
+                onRemove(item.id);
+              } else {
+                removeInventoryItem(item.id);
+                onClose();
               }
-            ]
-          );
+            }
+          } else {
+            Alert.alert(
+              title,
+              msg,
+              [
+                { text: lang === 'ko' ? '취소' : 'Cancel', style: 'cancel' },
+                {
+                  text: lang === 'ko' ? '치우기' : 'Remove',
+                  style: 'destructive',
+                  onPress: () => {
+                    if (onRemove) {
+                      onRemove(item.id);
+                    } else {
+                      removeInventoryItem(item.id);
+                      onClose();
+                    }
+                  }
+                }
+              ]
+            );
+          }
         }}
         style={{
           backgroundColor: 'rgba(235,87,87,0.08)',
@@ -3828,7 +3922,7 @@ function HomeScreen() {
     lang, theme, toggleTheme, setHomeCabH, setHomeCabTop,
     barModeVisible, setBarModeVisible, bgmPlaying, bgmMoodIdx,
     inventoryItems, shelf0Ids, shelf1Ids,
-    barNeonColor, barWallThemeId,
+    barNeonColor, barWallThemeId, removeInventoryItem,
   } = useAppStore();
   const styles = useStyles();
   const t      = TEXTS[lang];
@@ -3840,6 +3934,8 @@ function HomeScreen() {
   const [atmosphereH, setAtmosphereH] = useState(0);
   const [addModalVisible,     setAddModalVisible]     = useState(false);
   const [customizeVisible,    setCustomizeVisible]    = useState(false);
+  const [shelf0Page, setShelf0Page] = useState(0);
+  const [shelf1Page, setShelf1Page] = useState(0);
 
   const focusedItem = useMemo(
     () => inventoryItems.find(it => it.id === focusedItemId) ?? null,
@@ -3888,26 +3984,50 @@ function HomeScreen() {
 
   const onDragStart = useCallback((id: string) => setDraggingId(id), []);
 
-  const onDragEnd = useCallback((id: string, slotDelta: number) => {
+  const onDragEnd = useCallback((id: string, releaseX: number, releaseY: number) => {
     setDraggingId(null);
-    if (slotDelta === 0) return;
-    const reorder = (ids: string[]) => {
-      const idx = ids.indexOf(id);
-      if (idx === -1) return ids;
-      const nIdx = Math.max(0, Math.min(ids.length - 1, idx + slotDelta));
-      if (nIdx === idx) return ids;
-      const next = [...ids];
-      next.splice(idx, 1);
-      next.splice(nIdx, 0, id);
-      return next;
-    };
-    const { shelf0Ids: s0, shelf1Ids: s1, setShelf0Ids: setS0, setShelf1Ids: setS1 } = useAppStore.getState();
-    if (s0.includes(id)) {
-      setS0(reorder(s0));
-    } else if (s1.includes(id)) {
-      setS1(reorder(s1));
+    if (releaseX === 0 && releaseY === 0) return;
+
+    const { shelf0Ids: s0, shelf1Ids: s1, setShelf0Ids: setS0, setShelf1Ids: setS1, homeCabTop } = useAppStore.getState();
+
+    const shelf0Center = homeCabTop + shelfPlanks[0] - BOTTLE_H / 2;
+    const shelf1Center = homeCabTop + shelfPlanks[1] - BOTTLE_H / 2;
+    const dist0 = Math.abs(releaseY - shelf0Center);
+    const dist1 = Math.abs(releaseY - shelf1Center);
+    const targetShelfIdx = dist0 < dist1 ? 0 : 1;
+
+    const targetPage = targetShelfIdx === 0 ? shelf0Page : shelf1Page;
+
+    const localX = Math.max(0, Math.min(SCREEN_W - SHELF_MX * 2, releaseX - SHELF_MX));
+    const slotInPage = Math.floor(localX / SLOT_W);
+    const targetSlotIdx = targetPage * SLOT_COUNT + slotInPage;
+
+    const sourceShelf = s0.includes(id) ? 0 : 1;
+    const sourceList = sourceShelf === 0 ? s0 : s1;
+    const targetList = targetShelfIdx === 0 ? s0 : s1;
+
+    const nextSource = sourceList.filter(x => x !== id);
+
+    if (sourceShelf === targetShelfIdx) {
+      const clampedIdx = Math.max(0, Math.min(nextSource.length, targetSlotIdx));
+      const nextList = [...nextSource];
+      nextList.splice(clampedIdx, 0, id);
+      if (targetShelfIdx === 0) setS0(nextList);
+      else setS1(nextList);
+    } else {
+      const clampedIdx = Math.max(0, Math.min(targetList.length, targetSlotIdx));
+      const nextTarget = [...targetList];
+      nextTarget.splice(clampedIdx, 0, id);
+
+      if (sourceShelf === 0) {
+        setS0(nextSource);
+        setS1(nextTarget);
+      } else {
+        setS1(nextSource);
+        setS0(nextTarget);
+      }
     }
-  }, []);
+  }, [shelfPlanks, shelf0Page, shelf1Page]);
 
   return (
     <View style={styles.home}>
@@ -4017,6 +4137,7 @@ function HomeScreen() {
                 draggingId={draggingId}
                 onDragStart={onDragStart}
                 onDragEnd={onDragEnd}
+                onPageChange={setShelf0Page}
               />
               <ShelfRow
                 plankY={shelfPlanks[1]}
@@ -4026,6 +4147,7 @@ function HomeScreen() {
                 draggingId={draggingId}
                 onDragStart={onDragStart}
                 onDragEnd={onDragEnd}
+                onPageChange={setShelf1Page}
               />
             </View>
 
@@ -4044,7 +4166,20 @@ function HomeScreen() {
         <TouchableOpacity style={[StyleSheet.absoluteFill, styles.overlay]} onPress={closePanel} activeOpacity={1} />
       )}
       <Animated.View style={[styles.panel, { transform: [{ translateY: panelAnim }] }]}>
-        {focusedItem != null && <BottomPanel item={focusedItem} t={t} onClose={closePanel} />}
+        {focusedItem != null && (
+          <BottomPanel
+            item={focusedItem}
+            t={t}
+            onClose={closePanel}
+            onRemove={(id) => {
+              Animated.spring(panelAnim, { toValue: PANEL_H, useNativeDriver: true, friction: 10, tension: 80 })
+                .start(() => {
+                  removeInventoryItem(id);
+                  setFocusedItemId(null);
+                });
+            }}
+          />
+        )}
       </Animated.View>
       {/* Floating Action Button for Adding Spirit */}
       {focusedItem == null && (
@@ -4309,12 +4444,13 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
     onMoveShouldSetPanResponder:  () => true,
     onPanResponderGrant: (_e, gs) => {
       lastXRef.current = gs.x0;
+      useMixStore.getState().setStirring(true);
     },
     onPanResponderMove: (_e, gs) => {
       if (lastXRef.current !== null) {
         stirDistRef.current += Math.abs(gs.moveX - lastXRef.current);
         lastXRef.current = gs.moveX;
-        const p = Math.min(100, Math.round(stirDistRef.current / 3));
+        const p = Math.min(100, Math.round(stirDistRef.current / 10.5));
         if (p !== stirProgRef.current) {
           stirProgRef.current = p;
           setStirProg(p);
@@ -4328,6 +4464,14 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
         toValue: 0, useNativeDriver: true, tension: 80, friction: 6,
       }).start();
       lastXRef.current = null;
+      useMixStore.getState().setStirring(false);
+    },
+    onPanResponderTerminate: () => {
+      Animated.spring(stirXAnim, {
+        toValue: 0, useNativeDriver: true, tension: 80, friction: 6,
+      }).start();
+      lastXRef.current = null;
+      useMixStore.getState().setStirring(false);
     },
   })).current;
 
@@ -5600,7 +5744,7 @@ function MixScreen() {
   const t                            = TEXTS[lang];
   const C                            = useColors();
   const styles                       = useStyles();
-  const { selections, addPart, removeIngredient, clear, iceCount, iceType } = useMixStore();
+  const { selections, addPart, removeIngredient, clear, iceCount, iceType, stirring } = useMixStore();
   const selected = useSelectedIngredients();
 
   const [simStage, setSimStage]      = useState<SimStage>('select');
@@ -5765,6 +5909,11 @@ function MixScreen() {
 
       // ── Gemini 비동기 보강 (실패 시 로컬 결과 유지) ──
       setAiLoading(true);
+      if (!process.env.EXPO_PUBLIC_GEMINI_API_KEY) {
+        setAiError(lang === 'ko' ? '환경 변수(.env)가 로드되지 않았습니다. Metro 서버를 재시작(npx expo start --clear)해 주세요!' : 'Environment variable (.env) not loaded. Please restart your Metro bundler (npx expo start --clear).');
+        setAiLoading(false);
+        return;
+      }
       const genome = computeGenomeProfile(inventoryItems, journalEntries);
       const { glassType: gt, iceType: it } = useMixStore.getState();
       // ABV 계산 (MixSimulator 밖이므로 직접 계산)
@@ -5931,7 +6080,7 @@ function MixScreen() {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 90 }}>
+      <ScrollView scrollEnabled={!stirring} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 90 }}>
 
         {/* ── 시뮬레이션 히어로 ── */}
         <MixSimulator selected={selected} lang={lang} onReset={clear} onStageChange={setSimStage} onSaveRecipe={handleSaveRecipe} />
