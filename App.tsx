@@ -8975,6 +8975,7 @@ function ExploreScreen() {
         userName:   barName, userNameKo: barName,
         initials:   av.initials, c1: av.c1, c2: av.c2,
         followers:  '나의 기록',
+        neonColor: barNeonColor,
         recipeId:   r.id,
         name:       r.name, nameKo: r.nameKo,
         color:      r.color,
@@ -8987,7 +8988,7 @@ function ExploreScreen() {
         minsAgo:    r.publicSince ? Math.floor((Date.now() - r.publicSince) / 60000) : 0,
         saveCount:  0,
       }));
-  }, [customRecipes, barName]);
+  }, [customRecipes, barName, barNeonColor]);
 
   const loadMore = useCallback(() => {
     if (busyRef.current) return;

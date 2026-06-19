@@ -45,3 +45,4 @@ config.serializer.getPolyfills = (ctx) => {
 };
 
 module.exports = config;
+

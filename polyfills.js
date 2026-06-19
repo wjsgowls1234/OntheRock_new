@@ -8,3 +8,4 @@ if (typeof global.DOMException === 'undefined') {
   global.DOMException.prototype = Object.create(Error.prototype);
   global.DOMException.prototype.constructor = global.DOMException;
 }
+

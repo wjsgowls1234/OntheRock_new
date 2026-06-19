@@ -6,3 +6,4 @@ if (typeof globalThis.DOMException === 'undefined') {
     }
   };
 }
+
