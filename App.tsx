@@ -612,75 +612,73 @@ const BOTTLE_VSCALE: number[] = [1.00, 0.93, 0.87, 0.97, 0.95, 0.90, 0.88, 0.96]
 
 const PANTRY_INGREDIENTS: MixIngredient[] = [
   // 1. Sour (산미료)
-  {
-    id: 'p_lime', name: 'Lime Juice', nameKo: '라임 주스', type: 'Juice', color: '#5cb85c',
-    baseProfile: { sweet: 1, sour: 5, bitter: 1, body: 1, aroma: 3 },
-    role: 'sour', abv: 0, sugar: 1, acid: 5
-  },
-  {
-    id: 'p_lemon', name: 'Lemon Juice', nameKo: '레몬 주스', type: 'Juice', color: '#f0ad4e',
-    baseProfile: { sweet: 1, sour: 5, bitter: 1, body: 1, aroma: 3 },
-    role: 'sour', abv: 0, sugar: 1, acid: 5
-  },
+  { id:'p_lime',      name:'Lime Juice',        nameKo:'라임 주스',       type:'Juice',   color:'#5cb85c',
+    baseProfile:{ sweet:1, sour:5, bitter:1, body:1, aroma:3 }, role:'sour',      abv:0,  sugar:1, acid:5 },
+  { id:'p_lemon',     name:'Lemon Juice',        nameKo:'레몬 주스',       type:'Juice',   color:'#f0c040',
+    baseProfile:{ sweet:1, sour:5, bitter:1, body:1, aroma:3 }, role:'sour',      abv:0,  sugar:1, acid:5 },
+  { id:'p_grapefruit',name:'Grapefruit Juice',   nameKo:'자몽 주스',       type:'Juice',   color:'#f87060',
+    baseProfile:{ sweet:2, sour:4, bitter:2, body:1, aroma:3 }, role:'sour',      abv:0,  sugar:2, acid:4 },
+  { id:'p_orange',    name:'Orange Juice',       nameKo:'오렌지 주스',     type:'Juice',   color:'#ff8020',
+    baseProfile:{ sweet:4, sour:2, bitter:0, body:2, aroma:3 }, role:'sour',      abv:0,  sugar:4, acid:2 },
+  { id:'p_cranberry', name:'Cranberry Juice',    nameKo:'크랜베리 주스',   type:'Juice',   color:'#c02040',
+    baseProfile:{ sweet:3, sour:3, bitter:1, body:1, aroma:2 }, role:'sour',      abv:0,  sugar:3, acid:3 },
+  { id:'p_pineapple', name:'Pineapple Juice',    nameKo:'파인애플 주스',   type:'Juice',   color:'#e8d030',
+    baseProfile:{ sweet:4, sour:2, bitter:0, body:2, aroma:4 }, role:'sour',      abv:0,  sugar:4, acid:2 },
   // 2. Sweet (감미료)
-  {
-    id: 'p_syrup', name: 'Simple Syrup', nameKo: '심플 시럽', type: 'Syrup', color: '#fcfcfc',
-    baseProfile: { sweet: 5, sour: 0, bitter: 0, body: 2, aroma: 1 },
-    role: 'sweet', abv: 0, sugar: 5, acid: 0
-  },
-  {
-    id: 'p_honey', name: 'Honey Syrup', nameKo: '꿀 시럽', type: 'Syrup', color: '#ffc107',
-    baseProfile: { sweet: 5, sour: 0, bitter: 1, body: 3, aroma: 4 },
-    role: 'sweet', abv: 0, sugar: 5, acid: 0
-  },
-  {
-    id: 'p_grenadine', name: 'Grenadine Syrup', nameKo: '그레나딘 시럽', type: 'Syrup', color: '#d9534f',
-    baseProfile: { sweet: 5, sour: 1, bitter: 0, body: 2, aroma: 3 },
-    role: 'sweet', abv: 0, sugar: 5, acid: 1
-  },
+  { id:'p_syrup',     name:'Simple Syrup',       nameKo:'심플 시럽',       type:'Syrup',   color:'#e0e8ff',
+    baseProfile:{ sweet:5, sour:0, bitter:0, body:2, aroma:1 }, role:'sweet',     abv:0,  sugar:5, acid:0 },
+  { id:'p_honey',     name:'Honey Syrup',        nameKo:'꿀 시럽',         type:'Syrup',   color:'#ffc107',
+    baseProfile:{ sweet:5, sour:0, bitter:1, body:3, aroma:4 }, role:'sweet',     abv:0,  sugar:5, acid:0 },
+  { id:'p_grenadine', name:'Grenadine Syrup',    nameKo:'그레나딘 시럽',   type:'Syrup',   color:'#d9534f',
+    baseProfile:{ sweet:5, sour:1, bitter:0, body:2, aroma:3 }, role:'sweet',     abv:0,  sugar:5, acid:1 },
+  { id:'p_agave',     name:'Agave Syrup',        nameKo:'아가베 시럽',     type:'Syrup',   color:'#e8d070',
+    baseProfile:{ sweet:5, sour:0, bitter:0, body:2, aroma:2 }, role:'sweet',     abv:0,  sugar:5, acid:0 },
+  { id:'p_orgeat',    name:'Orgeat Syrup',       nameKo:'오르자 시럽',     type:'Syrup',   color:'#f0d890',
+    baseProfile:{ sweet:5, sour:0, bitter:0, body:3, aroma:4 }, role:'sweet',     abv:0,  sugar:5, acid:0 },
+  { id:'p_cinnamon',  name:'Cinnamon Syrup',     nameKo:'시나몬 시럽',     type:'Syrup',   color:'#b05018',
+    baseProfile:{ sweet:4, sour:0, bitter:1, body:2, aroma:5 }, role:'sweet',     abv:0,  sugar:4, acid:0 },
   // 3. Modifier (리큐어 / 보조주)
-  {
-    id: 'p_sverm', name: 'Sweet Vermouth', nameKo: '스위트 베르무트', type: 'Spirit', color: '#8b0000',
-    baseProfile: { sweet: 4, sour: 1, bitter: 3, body: 3, aroma: 4 },
-    role: 'modifier', abv: 16, sugar: 4, acid: 1
-  },
-  {
-    id: 'p_dverm', name: 'Dry Vermouth', nameKo: '드라이 베르무트', type: 'Spirit', color: '#ffffe0',
-    baseProfile: { sweet: 1, sour: 2, bitter: 2, body: 2, aroma: 3 },
-    role: 'modifier', abv: 18, sugar: 1, acid: 2
-  },
-  {
-    id: 'p_triple', name: 'Triple Sec', nameKo: '트리플 섹', type: 'Spirit', color: '#ffffe0',
-    baseProfile: { sweet: 4, sour: 1, bitter: 1, body: 2, aroma: 4 },
-    role: 'modifier', abv: 30, sugar: 4, acid: 1
-  },
-  // 4. Bitter (비터스)
-  {
-    id: 'p_bitters', name: 'Angostura Bitters', nameKo: '앙고스투라 비터스', type: 'Bitters', color: '#5b3a29',
-    baseProfile: { sweet: 1, sour: 0, bitter: 5, body: 2, aroma: 5 },
-    role: 'bitter', abv: 44, sugar: 1, acid: 0
-  },
+  { id:'p_sverm',     name:'Sweet Vermouth',     nameKo:'스위트 베르무트', type:'Spirit',  color:'#8b0000',
+    baseProfile:{ sweet:4, sour:1, bitter:3, body:3, aroma:4 }, role:'modifier',  abv:16, sugar:4, acid:1 },
+  { id:'p_dverm',     name:'Dry Vermouth',       nameKo:'드라이 베르무트', type:'Spirit',  color:'#f5f5dc',
+    baseProfile:{ sweet:1, sour:2, bitter:2, body:2, aroma:3 }, role:'modifier',  abv:18, sugar:1, acid:2 },
+  { id:'p_triple',    name:'Triple Sec',         nameKo:'트리플 섹',       type:'Spirit',  color:'#fff8e0',
+    baseProfile:{ sweet:4, sour:1, bitter:1, body:2, aroma:4 }, role:'modifier',  abv:30, sugar:4, acid:1 },
+  { id:'p_campari',   name:'Campari',            nameKo:'캄파리',          type:'Spirit',  color:'#c82010',
+    baseProfile:{ sweet:2, sour:1, bitter:5, body:3, aroma:4 }, role:'modifier',  abv:24, sugar:2, acid:1 },
+  { id:'p_amaretto',  name:'Amaretto',           nameKo:'아마레토',        type:'Spirit',  color:'#8b2010',
+    baseProfile:{ sweet:5, sour:0, bitter:1, body:3, aroma:5 }, role:'modifier',  abv:21, sugar:5, acid:0 },
+  { id:'p_coffee_lq', name:'Coffee Liqueur',     nameKo:'커피 리큐어',     type:'Spirit',  color:'#1a0d08',
+    baseProfile:{ sweet:5, sour:0, bitter:2, body:3, aroma:5 }, role:'modifier',  abv:20, sugar:5, acid:0 },
+  { id:'p_elderflower',name:'Elderflower Liqueur',nameKo:'엘더플라워 리큐어',type:'Spirit',color:'#eef5e8',
+    baseProfile:{ sweet:4, sour:1, bitter:0, body:2, aroma:5 }, role:'modifier',  abv:20, sugar:4, acid:1 },
+  { id:'p_aperol',    name:'Aperol',             nameKo:'아페롤',          type:'Spirit',  color:'#e05010',
+    baseProfile:{ sweet:3, sour:1, bitter:4, body:2, aroma:3 }, role:'modifier',  abv:11, sugar:3, acid:1 },
+  { id:'p_bluecur',   name:'Blue Curacao',       nameKo:'블루 큐라소',     type:'Spirit',  color:'#0060d0',
+    baseProfile:{ sweet:4, sour:1, bitter:1, body:2, aroma:4 }, role:'modifier',  abv:25, sugar:4, acid:1 },
+  // 4. Bitters (비터스)
+  { id:'p_bitters',   name:'Angostura Bitters',  nameKo:'앙고스투라 비터스',type:'Bitters',color:'#5b3a29',
+    baseProfile:{ sweet:1, sour:0, bitter:5, body:2, aroma:5 }, role:'bitter',    abv:44, sugar:1, acid:0 },
+  { id:'p_orbitters', name:'Orange Bitters',     nameKo:'오렌지 비터스',   type:'Bitters', color:'#d04010',
+    baseProfile:{ sweet:1, sour:0, bitter:5, body:2, aroma:5 }, role:'bitter',    abv:28, sugar:1, acid:0 },
   // 5. Lengthener (탄산수 / 희석제)
-  {
-    id: 'p_soda', name: 'Soda Water', nameKo: '탄산수', type: 'Mixer', color: '#e6f2ff',
-    baseProfile: { sweet: 0, sour: 0, bitter: 0, body: 1, aroma: 0 },
-    role: 'lengthener', abv: 0, sugar: 0, acid: 0
-  },
-  {
-    id: 'p_tonic', name: 'Tonic Water', nameKo: '토닉 워터', type: 'Mixer', color: '#f0f8ff',
-    baseProfile: { sweet: 3, sour: 1, bitter: 2, body: 1, aroma: 2 },
-    role: 'lengthener', abv: 0, sugar: 3, acid: 1
-  },
-  {
-    id: 'p_ginger', name: 'Ginger Ale', nameKo: '진저에일', type: 'Mixer', color: '#fcf8e3',
-    baseProfile: { sweet: 4, sour: 1, bitter: 1, body: 2, aroma: 2 },
-    role: 'lengthener', abv: 0, sugar: 4, acid: 1
-  },
-  {
-    id: 'p_cola', name: 'Cola', nameKo: '콜라', type: 'Mixer', color: '#2b1a0a',
-    baseProfile: { sweet: 4, sour: 1, bitter: 1, body: 2, aroma: 3 },
-    role: 'lengthener', abv: 0, sugar: 4, acid: 1
-  }
+  { id:'p_soda',      name:'Soda Water',         nameKo:'탄산수',          type:'Mixer',   color:'#e6f2ff',
+    baseProfile:{ sweet:0, sour:0, bitter:0, body:1, aroma:0 }, role:'lengthener',abv:0,  sugar:0, acid:0 },
+  { id:'p_tonic',     name:'Tonic Water',        nameKo:'토닉 워터',       type:'Mixer',   color:'#f0f8ff',
+    baseProfile:{ sweet:3, sour:1, bitter:2, body:1, aroma:2 }, role:'lengthener',abv:0,  sugar:3, acid:1 },
+  { id:'p_ginger',    name:'Ginger Ale',         nameKo:'진저에일',        type:'Mixer',   color:'#fcf8e3',
+    baseProfile:{ sweet:4, sour:1, bitter:1, body:2, aroma:2 }, role:'lengthener',abv:0,  sugar:4, acid:1 },
+  { id:'p_gingerbeer',name:'Ginger Beer',        nameKo:'진저비어',        type:'Mixer',   color:'#e8e0a0',
+    baseProfile:{ sweet:3, sour:1, bitter:2, body:2, aroma:3 }, role:'lengthener',abv:0,  sugar:3, acid:1 },
+  { id:'p_cola',      name:'Cola',               nameKo:'콜라',            type:'Mixer',   color:'#2b1a0a',
+    baseProfile:{ sweet:4, sour:1, bitter:1, body:2, aroma:3 }, role:'lengthener',abv:0,  sugar:4, acid:1 },
+  // 6. Other (기타)
+  { id:'p_eggwhite',  name:'Egg White',          nameKo:'달걀 흰자',       type:'Mixer',   color:'#f8f8f8',
+    baseProfile:{ sweet:0, sour:0, bitter:0, body:3, aroma:1 }, role:'lengthener',abv:0,  sugar:0, acid:0 },
+  { id:'p_cream',     name:'Heavy Cream',        nameKo:'헤비 크림',       type:'Mixer',   color:'#fff8e8',
+    baseProfile:{ sweet:2, sour:0, bitter:0, body:5, aroma:2 }, role:'lengthener',abv:0,  sugar:2, acid:0 },
+  { id:'p_coconut',   name:'Coconut Cream',      nameKo:'코코넛 크림',     type:'Mixer',   color:'#f5f0e8',
+    baseProfile:{ sweet:4, sour:0, bitter:0, body:4, aroma:3 }, role:'lengthener',abv:0,  sugar:4, acid:0 },
 ];
 
 // PAST_DRINKS_DB defined above with RecipeCategory types
@@ -4430,107 +4428,104 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
           </ClipPath>
         </Defs>
 
-        {/* Ice — type-based rendering, clipped to glass interior */}
-        {showGlass && iceType !== 'none' && (
-          <G clipPath="url(#glassClip)">
-          {(() => {
+        {/* Ice — type-based rendering, no glass-shape clipping */}
+        {showGlass && iceType !== 'none' && (() => {
+          // martini: position ice in the wide bowl area, not at the narrow stem
+          const iceBaseY = glassType === 'martini' ? GT + Math.round((GB - GT) * 0.55) : GB;
           if (iceType === 'large') {
-            const iw = 38;
-            const ih = 38;
-            const iy = GB - ih - 4;
+            const iw = 56, ih = 56;
+            const iy = iceBaseY - ih - 4;
             const ix = CX - iw / 2;
             return (
-              <>
+              <G opacity={0.8}>
                 <Defs>
                   <LinearGradient id="iceLg" x1="0" y1="0" x2="1" y2="1">
-                    <Stop offset="0"   stopColor="rgba(255,255,255,0.38)" />
-                    <Stop offset="0.4" stopColor="rgba(205,242,255,0.20)" />
+                    <Stop offset="0"   stopColor="rgba(255,255,255,0.40)" />
+                    <Stop offset="0.4" stopColor="rgba(205,242,255,0.22)" />
                     <Stop offset="1"   stopColor="rgba(160,222,252,0.08)" />
                   </LinearGradient>
                 </Defs>
-                <SvgRect x={ix} y={iy} width={iw} height={ih} rx={5}
-                  fill="url(#iceLg)" stroke="rgba(255,255,255,0.34)" strokeWidth={1.1} />
-                <Line x1={ix+5} y1={iy+4} x2={ix+iw-10} y2={iy+2}
-                  stroke="rgba(255,255,255,0.50)" strokeWidth={0.9} />
-                <Line x1={ix+4} y1={iy+5} x2={ix+4} y2={iy+ih-5}
-                  stroke="rgba(255,255,255,0.30)" strokeWidth={0.8} />
-                <Line x1={ix+iw*0.4} y1={iy+7} x2={ix+iw*0.7} y2={iy+ih*0.55}
-                  stroke="rgba(255,255,255,0.18)" strokeWidth={0.7} />
-              </>
+                <SvgRect x={ix} y={iy} width={iw} height={ih} rx={7}
+                  fill="url(#iceLg)" stroke="rgba(255,255,255,0.36)" strokeWidth={1.2} />
+                <Line x1={ix+7} y1={iy+5} x2={ix+iw-14} y2={iy+3}
+                  stroke="rgba(255,255,255,0.52)" strokeWidth={1.0} />
+                <Line x1={ix+6} y1={iy+7} x2={ix+6} y2={iy+ih-7}
+                  stroke="rgba(255,255,255,0.32)" strokeWidth={0.9} />
+                <Line x1={ix+iw*0.40} y1={iy+10} x2={ix+iw*0.70} y2={iy+ih*0.55}
+                  stroke="rgba(255,255,255,0.18)" strokeWidth={0.8} />
+              </G>
             );
           }
           if (iceType === 'sphere') {
-            const r  = 22;
-            const cy = GB - r - 6;
+            const r  = 30;
+            const cy = iceBaseY - r - 6;
             return (
-              <>
+              <G opacity={0.8}>
                 <Defs>
                   <RadialGradient id="iceSph" cx="0.35" cy="0.28" r="0.72" fx="0.35" fy="0.28">
-                    <Stop offset="0"    stopColor="rgba(255,255,255,0.48)" />
-                    <Stop offset="0.22" stopColor="rgba(228,248,255,0.30)" />
+                    <Stop offset="0"    stopColor="rgba(255,255,255,0.50)" />
+                    <Stop offset="0.22" stopColor="rgba(228,248,255,0.32)" />
                     <Stop offset="0.60" stopColor="rgba(185,232,254,0.14)" />
                     <Stop offset="1"    stopColor="rgba(140,204,242,0.05)" />
                   </RadialGradient>
                 </Defs>
                 <Circle cx={CX} cy={cy} r={r}
-                  fill="url(#iceSph)" stroke="rgba(255,255,255,0.28)" strokeWidth={1.0} />
+                  fill="url(#iceSph)" stroke="rgba(255,255,255,0.30)" strokeWidth={1.1} />
                 <Path
                   d={`M ${CX - r*0.52} ${cy - r*0.36} Q ${CX - r*0.08} ${cy - r*0.72} ${CX + r*0.38} ${cy - r*0.44}`}
-                  fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth={1.2} strokeLinecap="round" />
-                <Circle cx={CX - r*0.30} cy={cy - r*0.32} r={r*0.08}
-                  fill="rgba(255,255,255,0.62)" />
-              </>
+                  fill="none" stroke="rgba(255,255,255,0.78)" strokeWidth={1.3} strokeLinecap="round" />
+                <Circle cx={CX - r*0.30} cy={cy - r*0.32} r={r*0.09}
+                  fill="rgba(255,255,255,0.65)" />
+              </G>
             );
           }
           if (iceType === 'crushed') {
             const pieces = [
-              { dx:-16, dy:-10, w:11, h:7,  rot:-14 }, { dx: 3,  dy:-8,  w:9,  h:6,  rot: 9 },
-              { dx:-7,  dy:-22, w:10, h:6,  rot:-6  }, { dx:-22, dy:-24, w:8,  h:5,  rot:18 },
-              { dx: 9,  dy:-22, w:9,  h:5,  rot:-20 }, { dx:-3,  dy:-36, w:8,  h:5,  rot: 7 },
-              { dx:-18, dy:-36, w:9,  h:4,  rot:-22 }, { dx: 8,  dy:-40, w:7,  h:5,  rot:14 },
-              { dx:-26, dy:-12, w:7,  h:4,  rot: 24 }, { dx: 14, dy:-32, w:8,  h:4,  rot:-10 },
-              { dx:-12, dy:-48, w:7,  h:4,  rot: 5  }, { dx: 2,  dy:-52, w:6,  h:4,  rot:-16 },
+              { dx:-22, dy:-14, w:16, h:10, rot:-14 }, { dx: 4,  dy:-11, w:13, h: 9, rot: 9 },
+              { dx:-10, dy:-30, w:14, h: 9, rot: -6 }, { dx:-30, dy:-32, w:12, h: 7, rot:18 },
+              { dx: 13, dy:-30, w:13, h: 7, rot:-20 }, { dx: -4, dy:-50, w:11, h: 7, rot: 7 },
+              { dx:-26, dy:-50, w:13, h: 6, rot:-22 }, { dx: 12, dy:-56, w:10, h: 7, rot:14 },
+              { dx:-36, dy:-17, w:10, h: 6, rot: 24 }, { dx: 20, dy:-44, w:11, h: 6, rot:-10 },
+              { dx:-16, dy:-66, w:10, h: 5, rot:  5 }, { dx:  3, dy:-72, w: 9, h: 5, rot:-16 },
             ];
             return (
-              <>
+              <G opacity={0.8}>
                 {pieces.map((p, i) => (
                   <SvgRect key={i}
-                    x={CX + p.dx} y={GB + p.dy} width={p.w} height={p.h} rx={1.5}
-                    fill="rgba(218,244,255,0.26)" stroke="rgba(255,255,255,0.30)" strokeWidth={0.7}
-                    transform={`rotate(${p.rot} ${CX + p.dx + p.w/2} ${GB + p.dy + p.h/2})`}
+                    x={CX + p.dx} y={iceBaseY + p.dy} width={p.w} height={p.h} rx={2}
+                    fill="rgba(218,244,255,0.27)" stroke="rgba(255,255,255,0.32)" strokeWidth={0.8}
+                    transform={`rotate(${p.rot} ${CX + p.dx + p.w/2} ${iceBaseY + p.dy + p.h/2})`}
                   />
                 ))}
-              </>
+              </G>
             );
           }
           // cubed
           const cubeOffsets = [
-            { dx: -22, dy: -22, w: 20, h: 14 },
-            { dx:   3, dy: -24, w: 18, h: 13 },
-            { dx: -10, dy: -38, w: 17, h: 12 },
-            { dx: -25, dy: -40, w: 16, h: 11 },
-            { dx:   5, dy: -42, w: 15, h: 11 },
+            { dx:-30, dy:-30, w:28, h:20 },
+            { dx:  4, dy:-33, w:26, h:18 },
+            { dx:-14, dy:-54, w:24, h:17 },
+            { dx:-34, dy:-56, w:22, h:16 },
+            { dx:  7, dy:-58, w:22, h:16 },
           ];
           return (
-            <>
+            <G opacity={0.8}>
               <Defs>
                 <LinearGradient id="iceCb" x1="0" y1="0" x2="1" y2="1">
-                  <Stop offset="0"   stopColor="rgba(255,255,255,0.36)" />
-                  <Stop offset="0.5" stopColor="rgba(208,240,255,0.18)" />
+                  <Stop offset="0"   stopColor="rgba(255,255,255,0.38)" />
+                  <Stop offset="0.5" stopColor="rgba(208,240,255,0.20)" />
                   <Stop offset="1"   stopColor="rgba(170,222,252,0.07)" />
                 </LinearGradient>
               </Defs>
               {cubeOffsets.slice(0, iceCount).map((c, i) => (
                 <SvgRect key={i}
-                  x={CX + c.dx} y={GB + c.dy} width={c.w} height={c.h} rx={2.5}
-                  fill="url(#iceCb)" stroke="rgba(255,255,255,0.28)" strokeWidth={0.9}
+                  x={CX + c.dx} y={iceBaseY + c.dy} width={c.w} height={c.h} rx={3.5}
+                  fill="url(#iceCb)" stroke="rgba(255,255,255,0.30)" strokeWidth={1.0}
                 />
               ))}
-            </>
+            </G>
           );
         })()}
-          </G>
-        )}
 
         {/* Glass body */}
         {showGlass && (
@@ -4810,6 +4805,8 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
             </View>
           )}
 
+          </View>
+
           {/* Nav */}
           <TouchableOpacity
             onPress={() => setStage('pour')}
@@ -4821,7 +4818,6 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
             <Text style={{ color: 'rgba(255,255,255,0.30)', fontSize: 13 }}>← {lang === 'ko' ? '뒤로' : 'Back'}</Text>
           </TouchableOpacity>
           </View>
-        </View>
       )}
 
       {/* ══ STAGE: POUR ══ */}
@@ -4978,9 +4974,14 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
             }} />
           </View>
 
-          {/* 서브 버튼 — 완성 후에만 */}
-          {stirProg >= 100 && (
-            <View style={{ position: 'absolute', bottom: 22, left: 0, right: 0, alignItems: 'center' }}>
+          {/* 하단 뒤로 / 서브 버튼 */}
+          <View style={{ position: 'absolute', bottom: 22, left: 20, right: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <TouchableOpacity onPress={() => setStage('pour')} style={{ paddingVertical: 10, paddingHorizontal: 14 }}>
+              <Text style={{ color: 'rgba(255,255,255,0.32)', fontSize: 13 }}>
+                ← {lang === 'ko' ? '뒤로' : 'Back'}
+              </Text>
+            </TouchableOpacity>
+            {stirProg >= 100 && (
               <TouchableOpacity
                 onPress={() => setStage('serve')}
                 style={{
@@ -4993,15 +4994,8 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
                   {lang === 'ko' ? '서브하기 →' : 'Serve →'}
                 </Text>
               </TouchableOpacity>
-            </View>
-          )}
-
-          <TouchableOpacity
-            onPress={() => setStage('pour')}
-            style={{ position: 'absolute', bottom: 38, left: 24 }}
-          >
-            <Text style={{ color: 'rgba(255,255,255,0.28)', fontSize: 13 }}>←</Text>
-          </TouchableOpacity>
+            )}
+          </View>
         </View>
       )}
 
@@ -5201,21 +5195,22 @@ function RecipeSimAnimation({ recipe, lang }: { recipe: Recipe; lang: 'en' | 'ko
             stroke="rgba(255,255,255,0.45)" strokeWidth={2} strokeLinecap="round" />
         </Svg>
 
-        {/* 스트로우 (좌우 흔들기) */}
+        {/* 스트로우 — opacity(JS) / transform(native) 분리 */}
         <Animated.View style={{
           position: 'absolute',
           top: gt - 10, left: cx - 3,
           width: 6, height: gb - gt + 16,
           borderRadius: 3, overflow: 'hidden',
           opacity: strawVis,
-          transform: [{ translateX: strawX }],
         }}>
-          {Array.from({ length: 9 }, (_, i) => (
-            <View key={i} style={{
-              flex: 1,
-              backgroundColor: i % 2 === 0 ? 'rgba(255,168,100,0.94)' : 'rgba(210,55,55,0.72)',
-            }} />
-          ))}
+          <Animated.View style={{ flex: 1, transform: [{ translateX: strawX }] }}>
+            {Array.from({ length: 9 }, (_, i) => (
+              <View key={i} style={{
+                flex: 1,
+                backgroundColor: i % 2 === 0 ? 'rgba(255,168,100,0.94)' : 'rgba(210,55,55,0.72)',
+              }} />
+            ))}
+          </Animated.View>
         </Animated.View>
       </View>
 
@@ -5223,6 +5218,163 @@ function RecipeSimAnimation({ recipe, lang }: { recipe: Recipe; lang: 'en' | 'ko
         {lang === 'ko' ? '믹싱 시뮬레이션' : 'MIXING SIMULATION'}
       </Text>
     </View>
+  );
+}
+
+type IngCat = 'all' | 'Spirit' | 'Juice' | 'Syrup' | 'Mixer' | 'Bitters';
+const ING_CATS: { id: IngCat; label: string; labelEn: string }[] = [
+  { id: 'all',     label: '전체',   labelEn: 'All'     },
+  { id: 'Spirit',  label: '주류',   labelEn: 'Spirits' },
+  { id: 'Juice',   label: '주스',   labelEn: 'Juice'   },
+  { id: 'Syrup',   label: '시럽',   labelEn: 'Syrup'   },
+  { id: 'Mixer',   label: '믹서',   labelEn: 'Mixer'   },
+  { id: 'Bitters', label: '비터스', labelEn: 'Bitters' },
+];
+
+function IngredientPickerSheet({ visible, onClose, available, selected, onToggle, lang }: {
+  visible: boolean;
+  onClose: () => void;
+  available: MixIngredient[];
+  selected: MixIngredient[];
+  onToggle: (ing: MixIngredient) => void;
+  lang: Lang;
+}) {
+  const C      = useColors();
+  const isDark = useIsDark();
+  const [cat, setCat] = useState<IngCat>('all');
+
+  const PANEL_H = Math.round(SH * 0.65);
+  const CARD_W  = Math.floor((SCREEN_W - 32 - 10) / 2);
+
+  const filtered = cat === 'all'
+    ? available
+    : available.filter(ing => ing.type === cat || (cat === 'Spirit' && ing.type === 'Base'));
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+        <TouchableOpacity
+          style={{ ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.52)' }}
+          onPress={onClose}
+          activeOpacity={1}
+        />
+        <View style={{ height: PANEL_H, backgroundColor: isDark ? '#0e0d1a' : '#faf8f4', borderTopLeftRadius: 22, borderTopRightRadius: 22, overflow: 'hidden' }}>
+          {/* handle */}
+          <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 6 }}>
+            <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.13)' }} />
+          </View>
+
+          {/* header */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingBottom: 12 }}>
+            <Text style={{ flex: 1, fontSize: 17, fontWeight: '800', color: isDark ? '#f0eeff' : '#18161e' }}>
+              {lang === 'ko' ? '재료 선택' : 'Select Ingredients'}
+            </Text>
+            {selected.length > 0 && (
+              <View style={{ backgroundColor: C.primary + '28', borderRadius: 10, paddingHorizontal: 9, paddingVertical: 3, marginRight: 10 }}>
+                <Text style={{ fontSize: 12, fontWeight: '800', color: C.primary }}>{selected.length}</Text>
+              </View>
+            )}
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Svg width={20} height={20} viewBox="0 0 22 22" fill="none">
+                <Line x1={5} y1={5} x2={17} y2={17} stroke={isDark ? '#888' : '#999'} strokeWidth={2} strokeLinecap="round" />
+                <Line x1={17} y1={5} x2={5} y2={17} stroke={isDark ? '#888' : '#999'} strokeWidth={2} strokeLinecap="round" />
+              </Svg>
+            </TouchableOpacity>
+          </View>
+
+          {/* category tabs */}
+          <View style={{ height: 44, marginBottom: 4 }}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 16, gap: 7, height: 44, alignItems: 'center' }}
+          >
+            {ING_CATS.map(c => {
+              const active = cat === c.id;
+              const cnt = c.id === 'all' ? available.length
+                : available.filter(i => i.type === c.id || (c.id === 'Spirit' && i.type === 'Base')).length;
+              return (
+                <TouchableOpacity
+                  key={c.id}
+                  onPress={() => setCat(c.id)}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center',
+                    paddingHorizontal: 13, paddingVertical: 7, borderRadius: 18,
+                    backgroundColor: active ? C.primary : (isDark ? '#1a1828' : '#f0edf8'),
+                    borderWidth: 1, borderColor: active ? C.primary : (isDark ? '#2a2840' : '#ddd8f0'),
+                  }}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '700', lineHeight: 18, color: active ? '#fff' : (isDark ? '#aaa' : '#666') }}>
+                    {lang === 'ko' ? c.label : c.labelEn}
+                  </Text>
+                  {/* fixed-width + fixed lineHeight keeps button height stable */}
+                  <View style={{ width: 24, alignItems: 'center', marginLeft: 4 }}>
+                    <Text style={{ fontSize: 10, fontWeight: '700', lineHeight: 18, color: active ? '#ffffffa6' : (isDark ? '#50508a' : '#b0b0cc') }}>
+                      {cnt}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+          </View>
+
+          {/* divider */}
+          <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: isDark ? '#2a2840' : '#e8e4f0', marginHorizontal: 16, marginBottom: 12 }} />
+
+          {/* ingredient grid */}
+          <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 36 }}>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+              {filtered.map(ing => {
+                const isOn = selected.some(s => s.id === ing.id);
+                const typeLabel = ing.type === 'Base' ? (lang === 'ko' ? '주류' : 'Spirit')
+                  : ing.type === 'Spirit' ? (lang === 'ko' ? '주류' : 'Spirit')
+                  : ing.type === 'Juice'  ? (lang === 'ko' ? '주스' : 'Juice')
+                  : ing.type === 'Syrup'  ? (lang === 'ko' ? '시럽' : 'Syrup')
+                  : ing.type === 'Bitters'? (lang === 'ko' ? '비터스' : 'Bitters')
+                  : (lang === 'ko' ? '믹서' : 'Mixer');
+                return (
+                  <TouchableOpacity
+                    key={ing.id}
+                    onPress={() => onToggle(ing)}
+                    activeOpacity={0.76}
+                    style={{
+                      width: CARD_W,
+                      borderRadius: 14,
+                      borderWidth: 1.5,
+                      borderColor: isOn ? ing.color : (isDark ? '#2a2840' : '#e0dcea'),
+                      backgroundColor: isOn ? ing.color + '1a' : (isDark ? '#161424' : '#ffffff'),
+                      padding: 11,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 9,
+                    }}
+                  >
+                    {/* swatch */}
+                    <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: ing.color + '30', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <View style={{ width: 16, height: 16, borderRadius: 8, backgroundColor: ing.color }} />
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text numberOfLines={1} style={{ fontSize: 12.5, fontWeight: '700', color: isOn ? ing.color : (isDark ? '#e8e4ff' : '#1a1828'), lineHeight: 16 }}>
+                        {lang === 'ko' ? ing.nameKo : ing.name}
+                      </Text>
+                      <Text style={{ fontSize: 10, color: isDark ? '#6060a0' : '#9090b0', marginTop: 1 }}>
+                        {typeLabel}{ing.abv > 0 ? ` · ${ing.abv}%` : ''}
+                      </Text>
+                    </View>
+                    {isOn && (
+                      <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: ing.color, alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <Text style={{ fontSize: 9, color: '#fff', fontWeight: '900' }}>✓</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -5271,7 +5423,7 @@ function RecipeCard({ recipe, lang, expanded, onPress }: {
           {/* 재료 병 이미지 미리보기 */}
           <View style={{ flexDirection: 'row', gap: -6, marginTop: 8 }}>
             {recipe.ingredients.slice(0, 5).map((ing, i) => {
-              const ingName = ing.split(/\s[-–]\s/)[0].trim();
+              const ingName = ing.replace(/\s+[\d(].*$/, '').trim();
               return (
                 <View key={i} style={{
                   width: 28, height: 28, borderRadius: 14,
@@ -5320,7 +5472,7 @@ function RecipeCard({ recipe, lang, expanded, onPress }: {
             </Text>
 
             {ingredients.map((ing, i) => {
-              const ingName = ing.split(/\s[-–]\s/)[0].trim();
+              const ingNameEn = (recipe.ingredients[i] ?? '').replace(/\s+[\d(].*$/, '').trim();
               return (
                 <View key={i} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
                   <View style={{
@@ -5331,7 +5483,7 @@ function RecipeCard({ recipe, lang, expanded, onPress }: {
                     marginRight: 10, flexShrink: 0,
                   }}>
                     <ExpoImage
-                      source={{ uri: `https://www.thecocktaildb.com/images/ingredients/${encodeURIComponent(ingName)}-Small.png` }}
+                      source={{ uri: `https://www.thecocktaildb.com/images/ingredients/${encodeURIComponent(ingNameEn)}-Small.png` }}
                       style={{ width: 26, height: 26 }}
                       contentFit="contain"
                     />
@@ -5379,6 +5531,7 @@ function MixScreen() {
   const [adjustment, setAdjustment]  = useState<FlavorP>({ sweet:0, sour:0, bitter:0, body:0, aroma:0 });
   const [journalRating, setJournalRating] = useState(5);
   const [savedFlash, setSavedFlash]  = useState(false);
+  const [pickerOpen, setPickerOpen]  = useState(false);
   const [nameModal, setNameModal]        = useState(false);
   const [pendingName, setPendingName]    = useState('');
   const [pendingGlassIce, setPendingGlassIce] = useState<{ glass: GlassType; ice: number } | null>(null);
@@ -5666,25 +5819,68 @@ function MixScreen() {
         {/* ── 시뮬레이션 히어로 ── */}
         <MixSimulator selected={selected} lang={lang} onReset={clear} onStageChange={setSimStage} onSaveRecipe={handleSaveRecipe} />
 
-        {/* 재료 선택 칩 — mix/serve 단계에서 숨김 */}
-        {(simStage !== 'mix' && simStage !== 'serve') && (
-          <View style={[styles.chipRow, { paddingHorizontal: 20, marginTop: 20 }]}>
-            {availableIngredients.map((ing) => {
-              const on = selected.some((i) => i.id === ing.id);
-              return (
-                <TouchableOpacity key={ing.id}
-                  style={[styles.chip, on && styles.chipOn, on && { borderColor: ing.color, shadowColor: ing.color }]}
-                  onPress={() => toggle(ing)}
-                >
-                  {on && <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: ing.color, marginRight: 6 }} />}
-                  <Text style={[styles.chipTxt, on && { color: ing.color, fontWeight: '700' }]}>
-                    {lang === 'ko' ? ing.nameKo : ing.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+        {/* 재료 선택 — picker 버튼 + 선택 태그 */}
+        {simStage === 'pour' && (
+          <View style={{ paddingHorizontal: 20, marginTop: 20 }}>
+            <TouchableOpacity
+              onPress={() => setPickerOpen(true)}
+              activeOpacity={0.75}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: 9,
+                paddingHorizontal: 16, paddingVertical: 13,
+                borderRadius: 14, borderWidth: 1,
+                borderColor: selected.length > 0 ? C.primary + '60' : C.border,
+                backgroundColor: selected.length > 0 ? C.primary + '0e' : C.surface,
+              }}
+            >
+              <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                <Path d="M12 5v14M5 12h14" stroke={C.primary} strokeWidth={2.2} strokeLinecap="round"/>
+              </Svg>
+              <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', color: C.primary }}>
+                {lang === 'ko' ? '재료 선택하기' : 'Add Ingredients'}
+              </Text>
+              {selected.length > 0 && (
+                <View style={{ backgroundColor: C.primary + '28', borderRadius: 10, paddingHorizontal: 9, paddingVertical: 2 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: C.primary }}>{selected.length}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {/* 선택된 재료 태그 */}
+            {selected.length > 0 && (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 10 }}>
+                {selected.map(ing => (
+                  <TouchableOpacity
+                    key={ing.id}
+                    onPress={() => toggle(ing)}
+                    activeOpacity={0.72}
+                    style={{
+                      flexDirection: 'row', alignItems: 'center', gap: 5,
+                      paddingLeft: 8, paddingRight: 7, paddingVertical: 5,
+                      borderRadius: 12, borderWidth: 1, borderColor: ing.color,
+                      backgroundColor: ing.color + '1a',
+                    }}
+                  >
+                    <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: ing.color }} />
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: ing.color }}>
+                      {lang === 'ko' ? ing.nameKo : ing.name}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: ing.color + 'aa', lineHeight: 14 }}>×</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
           </View>
         )}
+
+        <IngredientPickerSheet
+          visible={pickerOpen}
+          onClose={() => setPickerOpen(false)}
+          available={availableIngredients}
+          selected={selected}
+          onToggle={toggle}
+          lang={lang}
+        />
 
         {/* AI 분석 버튼 + 결과 */}
         <View style={{ paddingHorizontal: 20, marginTop: 16 }}>
@@ -7069,14 +7265,248 @@ function SaveBtn({ saved, onPress }: { saved: boolean; onPress: () => void }) {
   );
 }
 
-function SpiritCard({ spirit, lang }: { spirit: SearchSpirit; lang: Lang }) {
+function SpiritDetailModal({ spirit, visible, onClose }: { spirit: SearchSpirit | null; visible: boolean; onClose: () => void }) {
+  const C      = useColors();
+  const isDark = useIsDark();
+  const { lang, savedSpiritIds, toggleSavedSpirit } = useAppStore();
+  const t = TEXTS[lang];
+
+  if (!spirit) return null;
+  const saved   = savedSpiritIds.includes(spirit.id);
+  const PANEL_H = Math.round(SH * 0.90);
+  const profileEntries = Object.entries(spirit.profile) as [keyof FlavorP, number][];
+  const profileLabels: Record<keyof FlavorP, string> = {
+    sweet:  lang === 'ko' ? '달콤함' : 'Sweet',
+    sour:   lang === 'ko' ? '신맛'   : 'Sour',
+    bitter: lang === 'ko' ? '쓴맛'   : 'Bitter',
+    body:   lang === 'ko' ? '바디감' : 'Body',
+    aroma:  lang === 'ko' ? '아로마' : 'Aroma',
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+        <TouchableOpacity style={{ ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.52)' }} onPress={onClose} activeOpacity={1} />
+        <View style={{ height: PANEL_H, backgroundColor: C.bg, borderTopLeftRadius: 20, borderTopRightRadius: 20, overflow: 'hidden' }}>
+          {/* Drag handle */}
+          <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 2 }}>
+            <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.14)' }} />
+          </View>
+          {/* Header */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.border }}>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 8 }} style={{ paddingRight: 12, paddingVertical: 8 }}>
+              <Svg width={22} height={22} viewBox="0 0 22 22" fill="none">
+                <Line x1={5} y1={5} x2={17} y2={17} stroke={C.text} strokeWidth={2} strokeLinecap="round" />
+                <Line x1={17} y1={5} x2={5} y2={17} stroke={C.text} strokeWidth={2} strokeLinecap="round" />
+              </Svg>
+            </TouchableOpacity>
+            <Text style={{ flex: 1, fontSize: 16, fontWeight: '800', color: C.text }} numberOfLines={1}>{spirit.brand}</Text>
+            <TouchableOpacity
+              onPress={() => toggleSavedSpirit(spirit.id)}
+              style={{ backgroundColor: saved ? C.primary : C.surfaceHi, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6, borderWidth: 1, borderColor: saved ? C.primary : C.border }}
+            >
+              <Text style={{ fontSize: 12, fontWeight: '700', color: saved ? C.bg : C.textDim }}>
+                {saved ? (lang === 'ko' ? '저장됨' : 'Saved') : (lang === 'ko' ? '저장' : 'Save')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 40 }}>
+            {/* Bottle image + info */}
+            <View style={{ flexDirection: 'row', gap: 16, marginBottom: 22 }}>
+              <View style={{ width: 90, height: 130, borderRadius: 14, backgroundColor: C.surfaceHi, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                <ExpoImage
+                  source={{ uri: `https://www.thecocktaildb.com/images/ingredients/${encodeURIComponent(spirit.apiName)}-Medium.png` }}
+                  style={{ width: 70, height: 110 }} contentFit="contain"
+                />
+              </View>
+              <View style={{ flex: 1, paddingTop: 2 }}>
+                <Text style={{ fontSize: 21, fontWeight: '800', color: C.text, marginBottom: 5, lineHeight: 26 }}>{spirit.brand}</Text>
+                <View style={{ flexDirection: 'row', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+                  <View style={{ backgroundColor: `${C.primary}22`, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                    <Text style={{ fontSize: 11, color: C.primary, fontWeight: '800' }}>{spirit.abv}% ABV</Text>
+                  </View>
+                </View>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: C.text, marginBottom: 2 }}>
+                  {lang === 'ko' ? spirit.typeLabelKo : spirit.typeLabel}
+                </Text>
+                <Text style={{ fontSize: 12, color: C.textDim, marginBottom: 10 }}>
+                  {lang === 'ko' ? spirit.originKo : spirit.origin}
+                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
+                  {(lang === 'ko' ? spirit.tagsKo : spirit.tags).map(tag => (
+                    <View key={tag} style={{ backgroundColor: C.surfaceHi, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: C.border }}>
+                      <Text style={{ fontSize: 11, color: C.textDim }}>{tag}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            </View>
+
+            {/* Flavor profile */}
+            <Text style={{ fontSize: 11, fontWeight: '800', color: C.textDim, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 12 }}>
+              {t.flavorProfile}
+            </Text>
+            <View style={{ alignItems: 'center', marginBottom: 16 }}>
+              <RadarChart profile={spirit.profile} labels={t.radarLabels} size={196} />
+            </View>
+
+            {/* Flavor bars */}
+            <View style={{ gap: 9, marginBottom: 4 }}>
+              {profileEntries.map(([key, val]) => (
+                <View key={key} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Text style={{ fontSize: 11, color: C.textDim, width: 56 }}>{profileLabels[key]}</Text>
+                  <View style={{ flex: 1, height: 5, borderRadius: 3, backgroundColor: C.surfaceHi, overflow: 'hidden' }}>
+                    <View style={{ width: `${val / 5 * 100}%`, height: '100%', borderRadius: 3, backgroundColor: C.primary }} />
+                  </View>
+                  <Text style={{ fontSize: 11, color: C.textDim, width: 14, textAlign: 'right' }}>{val}</Text>
+                </View>
+              ))}
+            </View>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function RecipeDetailModal({ recipe, visible, onClose }: { recipe: Recipe | null; visible: boolean; onClose: () => void }) {
+  const C      = useColors();
+  const isDark = useIsDark();
+  const { lang, savedRecipeIds, toggleSavedRecipe } = useAppStore();
+  const [imgFailed, setImgFailed] = useState(false);
+
+  useEffect(() => { if (visible) setImgFailed(false); }, [visible]);
+
+  if (!recipe) return null;
+  const saved      = savedRecipeIds.includes(recipe.id);
+  const diffColor  = recipe.difficulty === 'Easy' ? '#22c55e' : recipe.difficulty === 'Medium' ? '#f59e0b' : '#ef4444';
+  const PANEL_H    = Math.round(SH * 0.92);
+  const ingredients = lang === 'ko' ? recipe.ingredientsKo : recipe.ingredients;
+  const steps       = lang === 'ko' ? recipe.stepsKo       : recipe.stepsEn;
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+        <TouchableOpacity style={{ ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.52)' }} onPress={onClose} activeOpacity={1} />
+        <View style={{ height: PANEL_H, backgroundColor: C.bg, borderTopLeftRadius: 20, borderTopRightRadius: 20, overflow: 'hidden' }}>
+          {/* Drag handle */}
+          <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 2 }}>
+            <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.14)' }} />
+          </View>
+          {/* Header */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.border }}>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 8 }} style={{ paddingRight: 12, paddingVertical: 8 }}>
+              <Svg width={22} height={22} viewBox="0 0 22 22" fill="none">
+                <Line x1={5} y1={5} x2={17} y2={17} stroke={C.text} strokeWidth={2} strokeLinecap="round" />
+                <Line x1={17} y1={5} x2={5} y2={17} stroke={C.text} strokeWidth={2} strokeLinecap="round" />
+              </Svg>
+            </TouchableOpacity>
+            <Text style={{ flex: 1, fontSize: 16, fontWeight: '800', color: C.text }} numberOfLines={1}>
+              {lang === 'ko' ? recipe.nameKo : recipe.name}
+            </Text>
+            <TouchableOpacity
+              onPress={() => toggleSavedRecipe(recipe.id)}
+              style={{ backgroundColor: saved ? recipe.color : C.surfaceHi, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6, borderWidth: 1, borderColor: saved ? recipe.color : C.border }}
+            >
+              <Text style={{ fontSize: 12, fontWeight: '700', color: saved ? '#fff' : C.textDim }}>
+                {saved ? (lang === 'ko' ? '저장됨' : 'Saved') : (lang === 'ko' ? '저장' : 'Save')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 40 }}>
+            {/* Hero + title */}
+            <View style={{ flexDirection: 'row', gap: 16, marginBottom: 22 }}>
+              <View style={{ width: 90, height: 116, borderRadius: 14, backgroundColor: `${recipe.color}22`, borderWidth: 1, borderColor: `${recipe.color}44`, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                {recipe.heroApiName && !imgFailed ? (
+                  <ExpoImage
+                    source={{ uri: `https://www.thecocktaildb.com/images/ingredients/${recipe.heroApiName}-Medium.png` }}
+                    style={{ width: 72, height: 96 }} contentFit="contain"
+                    onError={() => setImgFailed(true)}
+                  />
+                ) : (
+                  <Svg width={34} height={34} viewBox="0 0 24 24" fill="none">
+                    <Path d="M8 3C8 3 6 5 6 8C6 10 7 11 8 12C9 13 10 14 10 17H14C14 14 15 13 16 12C17 11 18 10 18 8C18 5 16 3 16 3H8Z" stroke={recipe.color} strokeWidth={1.3} strokeLinejoin="round"/>
+                    <Line x1="10" y1="17" x2="10" y2="21" stroke={recipe.color} strokeWidth={1.3}/>
+                    <Line x1="14" y1="17" x2="14" y2="21" stroke={recipe.color} strokeWidth={1.3}/>
+                    <Line x1="8" y1="21" x2="16" y2="21" stroke={recipe.color} strokeWidth={1.3}/>
+                  </Svg>
+                )}
+              </View>
+              <View style={{ flex: 1, paddingTop: 2 }}>
+                <Text style={{ fontSize: 20, fontWeight: '800', color: C.text, marginBottom: 7, lineHeight: 24 }}>
+                  {lang === 'ko' ? recipe.nameKo : recipe.name}
+                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginBottom: 8 }}>
+                  <View style={{ backgroundColor: `${diffColor}22`, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                    <Text style={{ fontSize: 11, color: diffColor, fontWeight: '700' }}>{recipe.difficulty}</Text>
+                  </View>
+                  <View style={{ backgroundColor: C.surfaceHi, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: C.border }}>
+                    <Text style={{ fontSize: 11, color: C.textDim, fontWeight: '600' }}>{recipe.prepMins} min</Text>
+                  </View>
+                  {recipe.abv != null && (
+                    <View style={{ backgroundColor: `${C.primary}20`, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                      <Text style={{ fontSize: 11, color: C.primary, fontWeight: '700' }}>{recipe.abv}% ABV</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={{ fontSize: 12, color: C.textDim, lineHeight: 18 }}>
+                  {lang === 'ko' ? recipe.descKo : recipe.descEn}
+                </Text>
+              </View>
+            </View>
+
+            {/* Ingredients */}
+            <Text style={{ fontSize: 11, fontWeight: '800', color: C.textDim, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 10 }}>
+              {lang === 'ko' ? '재료' : 'Ingredients'}
+            </Text>
+            <View style={{ backgroundColor: C.surfaceHi, borderRadius: 12, borderWidth: 1, borderColor: C.border, marginBottom: 20, overflow: 'hidden' }}>
+              {ingredients.map((ing, i) => (
+                <View key={i} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 11, borderBottomWidth: i < ingredients.length - 1 ? StyleSheet.hairlineWidth : 0, borderBottomColor: C.border, gap: 10 }}>
+                  <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: recipe.color }} />
+                  <Text style={{ fontSize: 13, color: C.text, flex: 1 }}>{ing}</Text>
+                </View>
+              ))}
+            </View>
+
+            {/* Steps */}
+            {steps.length > 0 && (
+              <>
+                <Text style={{ fontSize: 11, fontWeight: '800', color: C.textDim, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 14 }}>
+                  {lang === 'ko' ? '만드는 법' : 'How to Make'}
+                </Text>
+                <View style={{ gap: 14 }}>
+                  {steps.map((step, i) => (
+                    <View key={i} style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
+                      <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: recipe.color, alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
+                        <Text style={{ fontSize: 11, fontWeight: '800', color: '#fff' }}>{i + 1}</Text>
+                      </View>
+                      <Text style={{ flex: 1, fontSize: 13, color: C.text, lineHeight: 20 }}>{step}</Text>
+                    </View>
+                  ))}
+                </View>
+              </>
+            )}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function SpiritCard({ spirit, lang, onPress }: { spirit: SearchSpirit; lang: Lang; onPress?: () => void }) {
   const { savedSpiritIds, toggleSavedSpirit } = useAppStore();
   const C = useColors();
   const saved = savedSpiritIds.includes(spirit.id);
   return (
-    <View style={{ backgroundColor: C.surface, borderRadius: 14, borderWidth: 1, borderColor: C.border, padding: 14, marginBottom: 10, flexDirection: 'row', gap: 12, alignItems: 'center' }}>
-      <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: `${C.primary}18`, alignItems: 'center', justifyContent: 'center' }}>
-        <SpiritTypeIcon type={spirit.spiritType} size={22} />
+    <TouchableOpacity activeOpacity={0.80} onPress={onPress} style={{ backgroundColor: C.surface, borderRadius: 14, borderWidth: 1, borderColor: C.border, padding: 12, marginBottom: 10, flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+      <View style={{ width: 54, height: 76, borderRadius: 10, backgroundColor: C.surfaceHi, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+        <ExpoImage
+          source={{ uri: `https://www.thecocktaildb.com/images/ingredients/${encodeURIComponent(spirit.apiName)}-Medium.png` }}
+          style={{ width: 42, height: 62 }}
+          contentFit="contain"
+        />
       </View>
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
@@ -7100,24 +7530,35 @@ function SpiritCard({ spirit, lang }: { spirit: SearchSpirit; lang: Lang }) {
         <RadarChart profile={spirit.profile} labels={[]} size={46} />
         <SaveBtn saved={saved} onPress={() => toggleSavedSpirit(spirit.id)} />
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
-function SearchRecipeCard({ recipe, lang }: { recipe: Recipe; lang: Lang }) {
+function SearchRecipeCard({ recipe, lang, onPress }: { recipe: Recipe; lang: Lang; onPress?: () => void }) {
   const { savedRecipeIds, toggleSavedRecipe } = useAppStore();
   const C = useColors();
   const saved = savedRecipeIds.includes(recipe.id);
   const diffColor = recipe.difficulty === 'Easy' ? '#22c55e' : recipe.difficulty === 'Medium' ? '#f59e0b' : '#ef4444';
+  const [imgFailed, setImgFailed] = useState(false);
+  const showImg = !!recipe.heroApiName && !imgFailed;
   return (
-    <View style={{ backgroundColor: C.surface, borderRadius: 14, borderWidth: 1, borderColor: C.border, padding: 14, marginBottom: 10, flexDirection: 'row', gap: 12, alignItems: 'center' }}>
-      <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: `${recipe.color}28`, alignItems: 'center', justifyContent: 'center' }}>
-        <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-          <Path d="M8 3C8 3 6 5 6 8C6 10 7 11 8 12C9 13 10 14 10 17H14C14 14 15 13 16 12C17 11 18 10 18 8C18 5 16 3 16 3H8Z" stroke={recipe.color} strokeWidth={1.4} strokeLinejoin="round"/>
-          <Line x1="10" y1="17" x2="10" y2="21" stroke={recipe.color} strokeWidth={1.4}/>
-          <Line x1="14" y1="17" x2="14" y2="21" stroke={recipe.color} strokeWidth={1.4}/>
-          <Line x1="8" y1="21" x2="16" y2="21" stroke={recipe.color} strokeWidth={1.4}/>
-        </Svg>
+    <TouchableOpacity activeOpacity={0.80} onPress={onPress} style={{ backgroundColor: C.surface, borderRadius: 14, borderWidth: 1, borderColor: C.border, padding: 12, marginBottom: 10, flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+      <View style={{ width: 54, height: 76, borderRadius: 10, backgroundColor: `${recipe.color}18`, borderWidth: 1, borderColor: `${recipe.color}30`, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+        {showImg ? (
+          <ExpoImage
+            source={{ uri: `https://www.thecocktaildb.com/images/ingredients/${recipe.heroApiName}-Medium.png` }}
+            style={{ width: 42, height: 62 }}
+            contentFit="contain"
+            onError={() => setImgFailed(true)}
+          />
+        ) : (
+          <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+            <Path d="M8 3C8 3 6 5 6 8C6 10 7 11 8 12C9 13 10 14 10 17H14C14 14 15 13 16 12C17 11 18 10 18 8C18 5 16 3 16 3H8Z" stroke={recipe.color} strokeWidth={1.4} strokeLinejoin="round"/>
+            <Line x1="10" y1="17" x2="10" y2="21" stroke={recipe.color} strokeWidth={1.4}/>
+            <Line x1="14" y1="17" x2="14" y2="21" stroke={recipe.color} strokeWidth={1.4}/>
+            <Line x1="8" y1="21" x2="16" y2="21" stroke={recipe.color} strokeWidth={1.4}/>
+          </Svg>
+        )}
       </View>
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 }}>
@@ -7135,16 +7576,16 @@ function SearchRecipeCard({ recipe, lang }: { recipe: Recipe; lang: Lang }) {
         </Text>
       </View>
       <SaveBtn saved={saved} onPress={() => toggleSavedRecipe(recipe.id)} />
-    </View>
+    </TouchableOpacity>
   );
 }
 
-function FlavorCard({ tag, lang, onPress }: { tag: typeof FLAVOR_TAGS[0]; lang: Lang; onPress: (label: string) => void }) {
+function FlavorCard({ tag, lang, onPress }: { tag: typeof FLAVOR_TAGS[0]; lang: Lang; onPress: () => void }) {
   const C = useColors();
   const matchedSpirits = SEARCH_SPIRITS.filter(s => tag.spiritTypes.includes(s.spiritType));
   return (
     <TouchableOpacity
-      onPress={() => onPress(lang === 'ko' ? tag.labelKo : tag.label)}
+      onPress={onPress}
       style={{ backgroundColor: C.surface, borderRadius: 14, borderWidth: 1, borderColor: C.border, padding: 14, marginBottom: 10, flexDirection: 'row', gap: 12, alignItems: 'center' }}
     >
       <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: C.surfaceHi, alignItems: 'center', justifyContent: 'center' }}>
@@ -7165,6 +7606,133 @@ function FlavorCard({ tag, lang, onPress }: { tag: typeof FLAVOR_TAGS[0]; lang: 
   );
 }
 
+const FLAVOR_DESC: Record<string, { en: string; ko: string }> = {
+  sweet:  { en: 'Rich, indulgent sweetness from sugars and natural ingredients — caramel, honey, and vanilla notes.', ko: '설탕과 천연 재료에서 오는 풍부하고 매력적인 단맛. 캐러멜, 꿀, 바닐라의 풍미가 느껴져요.' },
+  sour:   { en: 'Bright citrus acidity that balances sweetness and adds refreshing lift — lemon, lime, and grapefruit.', ko: '단맛의 균형을 잡아주는 밝은 시트러스 산미. 레몬, 라임, 자몽의 신선함이 살아 있어요.' },
+  bitter: { en: 'Complex bitterness that adds depth and sophistication, often from botanicals, hops, or citrus peel.', ko: '깊이와 세련미를 더하는 복합적인 쓴맛. 보태니컬, 홉, 시트러스 껍질에서 비롯돼요.' },
+  smoky:  { en: 'Earthy, rich smoke character from charred barrels or peat — mysterious depth and warmth.', ko: '탄 오크통이나 피트에서 비롯된 묵직한 스모키 캐릭터. 신비로운 깊이와 온기가 느껴져요.' },
+  floral: { en: 'Delicate, aromatic floral notes reminiscent of fresh blossoms, often from botanicals and slow distillation.', ko: '신선한 꽃을 연상케 하는 섬세하고 향긋한 플로럴 노트. 보태니컬의 정수가 담겨 있어요.' },
+  herbal: { en: 'Green, fresh herbal character from botanical ingredients — complex, aromatic, garden-fresh.', ko: '보태니컬 재료에서 나오는 싱그럽고 신선한 허벌 캐릭터. 복잡하고 생동감 있는 향이에요.' },
+  fruity: { en: 'Lush, ripe fruit flavors from stone fruits to tropical notes, with natural sweetness and aromatic lift.', ko: '핵과류부터 트로피컬까지 다양한 잘 익은 과일 풍미. 자연스러운 단맛과 향긋함이 가득해요.' },
+  nutty:  { en: 'Warm, roasted nut flavors — almond, walnut, hazelnut — rich and comforting with pleasant depth.', ko: '아몬드, 호두, 헤이즐넛의 따뜻하고 구수한 견과류 풍미. 편안하고 깊은 맛이 특징이에요.' },
+  clean:  { en: 'Crisp, pure and neutral character with minimal influence — a blank canvas that lets other flavors shine.', ko: '깔끔하고 순수한 뉴트럴 캐릭터. 다른 재료의 풍미를 돋보이게 해주는 빈 캔버스 같아요.' },
+  bold:   { en: 'Intense, assertive flavors that command attention — powerful impact and a long, lingering finish.', ko: '강렬하고 주장이 확실한 풍미. 입 안에서 오래 남는 파워풀한 피니시가 인상적이에요.' },
+};
+
+function FlavorDetailModal({ tag, visible, onClose }: {
+  tag: typeof FLAVOR_TAGS[0] | null;
+  visible: boolean;
+  onClose: () => void;
+}) {
+  const C = useColors();
+  const isDark = useIsDark();
+  const { lang } = useAppStore();
+  const [nestedSpirit, setNestedSpirit] = useState<SearchSpirit | null>(null);
+
+  useEffect(() => { if (!visible) setNestedSpirit(null); }, [visible]);
+
+  if (!tag) return null;
+
+  const matchedSpirits = SEARCH_SPIRITS.filter(s => tag.spiritTypes.includes(s.spiritType));
+  const PANEL_H = Math.round(SH * 0.87);
+  const desc = FLAVOR_DESC[tag.id];
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+        <TouchableOpacity
+          style={{ ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.52)' }}
+          onPress={onClose}
+          activeOpacity={1}
+        />
+        <View style={{ height: PANEL_H, backgroundColor: C.bg, borderTopLeftRadius: 20, borderTopRightRadius: 20, overflow: 'hidden' }}>
+          <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 4 }}>
+            <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.14)' }} />
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.border }}>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 8 }} style={{ paddingRight: 12, paddingVertical: 8 }}>
+              <Svg width={20} height={20} viewBox="0 0 22 22" fill="none">
+                <Line x1={5} y1={5} x2={17} y2={17} stroke={C.text} strokeWidth={2} strokeLinecap="round" />
+                <Line x1={17} y1={5} x2={5} y2={17} stroke={C.text} strokeWidth={2} strokeLinecap="round" />
+              </Svg>
+            </TouchableOpacity>
+            <Text style={{ flex: 1, fontSize: 16, fontWeight: '800', color: C.text, letterSpacing: 0.2 }}>
+              {lang === 'ko' ? '풍미 정보' : 'Flavor Profile'}
+            </Text>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 22, paddingBottom: 44 }}>
+            <View style={{ alignItems: 'center', marginBottom: 24 }}>
+              <View style={{ width: 76, height: 76, borderRadius: 38, backgroundColor: C.surfaceHi, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+                <Text style={{ fontSize: 36 }}>{tag.icon}</Text>
+              </View>
+              <Text style={{ fontSize: 24, fontWeight: '900', color: C.text, marginBottom: 10, letterSpacing: 0.2 }}>
+                {lang === 'ko' ? tag.labelKo : tag.label}
+              </Text>
+              {desc && (
+                <Text style={{ fontSize: 13.5, color: C.textDim, lineHeight: 21, textAlign: 'center', paddingHorizontal: 4 }}>
+                  {lang === 'ko' ? desc.ko : desc.en}
+                </Text>
+              )}
+            </View>
+
+            {matchedSpirits.length > 0 && (
+              <>
+                <Text style={{ fontSize: 11, fontWeight: '800', color: C.textDim, letterSpacing: 1.3, textTransform: 'uppercase', marginBottom: 10 }}>
+                  {lang === 'ko' ? '관련 주류' : 'Related Spirits'}
+                </Text>
+                {matchedSpirits.map(s => (
+                  <TouchableOpacity
+                    key={s.id}
+                    activeOpacity={0.80}
+                    onPress={() => setNestedSpirit(s)}
+                    style={{ backgroundColor: C.surface, borderRadius: 14, borderWidth: 1, borderColor: C.border, padding: 12, marginBottom: 10, flexDirection: 'row', gap: 12, alignItems: 'center' }}
+                  >
+                    <View style={{ width: 54, height: 76, borderRadius: 10, backgroundColor: C.surfaceHi, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                      <ExpoImage
+                        source={{ uri: `https://www.thecocktaildb.com/images/ingredients/${encodeURIComponent(s.apiName)}-Medium.png` }}
+                        style={{ width: 42, height: 62 }}
+                        contentFit="contain"
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                        <Text style={{ fontSize: 15, fontWeight: '700', color: C.text }}>{s.brand}</Text>
+                        <View style={{ backgroundColor: `${C.primary}20`, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 }}>
+                          <Text style={{ fontSize: 10, color: C.primary, fontWeight: '700' }}>{s.abv}%</Text>
+                        </View>
+                      </View>
+                      <Text style={{ fontSize: 11, color: C.textDim, marginBottom: 5 }}>
+                        {lang === 'ko' ? s.typeLabelKo : s.typeLabel} · {lang === 'ko' ? s.originKo : s.origin}
+                      </Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
+                        {(lang === 'ko' ? s.tagsKo : s.tags).map(tg => (
+                          <View key={tg} style={{ backgroundColor: C.surfaceHi, borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 }}>
+                            <Text style={{ fontSize: 10, color: C.textDim }}>{tg}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+                      <Path d="M9 18L15 12L9 6" stroke={C.textDim} strokeWidth={1.5} strokeLinecap="round" />
+                    </Svg>
+                  </TouchableOpacity>
+                ))}
+              </>
+            )}
+          </ScrollView>
+        </View>
+      </View>
+
+      <SpiritDetailModal
+        spirit={nestedSpirit}
+        visible={nestedSpirit !== null}
+        onClose={() => setNestedSpirit(null)}
+      />
+    </Modal>
+  );
+}
+
 function SearchScreen() {
   const { lang }   = useAppStore();
   const C          = useColors();
@@ -7174,6 +7742,9 @@ function SearchScreen() {
   const [focused, setFocused]       = useState(false);
   const focusAnim                   = useRef(new Animated.Value(0)).current;
   const inputRef                    = useRef<TextInput>(null);
+  const [selectedSpirit, setSelectedSpirit] = useState<SearchSpirit | null>(null);
+  const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
+  const [selectedFlavor, setSelectedFlavor] = useState<typeof FLAVOR_TAGS[0] | null>(null);
 
   const q = query.trim().toLowerCase();
 
@@ -7301,7 +7872,7 @@ function SearchScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 32 }}
       >
-        {q === '' ? (
+        {q === '' && filter === 'all' ? (
           /* ── Empty: Recent searches ── */
           <>
             <Text style={{ fontSize: 11, fontWeight: '800', color: C.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 12 }}>
@@ -7339,7 +7910,9 @@ function SearchScreen() {
           <View style={{ alignItems: 'center', paddingTop: 60, gap: 10 }}>
             <Text style={{ fontSize: 36 }}>🔍</Text>
             <Text style={{ fontSize: 15, color: C.textDim, fontWeight: '600' }}>
-              {lang === 'ko' ? `"${query}" 결과 없음` : `No results for "${query}"`}
+              {q
+                ? (lang === 'ko' ? `"${query}" 결과 없음` : `No results for "${query}"`)
+                : (lang === 'ko' ? '결과가 없어요.' : 'No results.')}
             </Text>
             <Text style={{ fontSize: 12, color: C.textDim, opacity: 0.6 }}>
               {lang === 'ko' ? '다른 키워드로 검색해 보세요.' : 'Try a different keyword.'}
@@ -7348,17 +7921,19 @@ function SearchScreen() {
         ) : (
           /* ── Results ── */
           <>
-            {/* Result count */}
-            <Text style={{ fontSize: 11, color: C.textDim, marginBottom: 14 }}>
-              {lang === 'ko' ? `${totalResults}개 결과` : `${totalResults} result${totalResults !== 1 ? 's' : ''}`}
-            </Text>
+            {/* Result count — only show when there's a query */}
+            {q !== '' && (
+              <Text style={{ fontSize: 11, color: C.textDim, marginBottom: 14 }}>
+                {lang === 'ko' ? `${totalResults}개 결과` : `${totalResults} result${totalResults !== 1 ? 's' : ''}`}
+              </Text>
+            )}
 
             {showSpirits && matchedSpirits.length > 0 && (
               <>
                 <Text style={{ fontSize: 11, fontWeight: '800', color: C.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 10 }}>
                   {lang === 'ko' ? '주류' : 'Spirits'}
                 </Text>
-                {matchedSpirits.map(s => <SpiritCard key={s.id} spirit={s} lang={lang} />)}
+                {matchedSpirits.map(s => <SpiritCard key={s.id} spirit={s} lang={lang} onPress={() => setSelectedSpirit(s)} />)}
               </>
             )}
 
@@ -7367,7 +7942,7 @@ function SearchScreen() {
                 <Text style={{ fontSize: 11, fontWeight: '800', color: C.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 10, marginTop: matchedSpirits.length > 0 ? 14 : 0 }}>
                   {lang === 'ko' ? '레시피' : 'Recipes'}
                 </Text>
-                {matchedRecipes.map(r => <SearchRecipeCard key={r.id} recipe={r} lang={lang} />)}
+                {matchedRecipes.map(r => <SearchRecipeCard key={r.id} recipe={r} lang={lang} onPress={() => setSelectedRecipe(r)} />)}
               </>
             )}
 
@@ -7377,13 +7952,29 @@ function SearchScreen() {
                   {lang === 'ko' ? '풍미' : 'Flavor'}
                 </Text>
                 {matchedFlavors.map(tag => (
-                  <FlavorCard key={tag.id} tag={tag} lang={lang} onPress={txt => { setQuery(txt); commitSearch(txt); }} />
+                  <FlavorCard key={tag.id} tag={tag} lang={lang} onPress={() => setSelectedFlavor(tag)} />
                 ))}
               </>
             )}
           </>
         )}
       </ScrollView>
+
+      <SpiritDetailModal
+        spirit={selectedSpirit}
+        visible={selectedSpirit !== null}
+        onClose={() => setSelectedSpirit(null)}
+      />
+      <RecipeDetailModal
+        recipe={selectedRecipe}
+        visible={selectedRecipe !== null}
+        onClose={() => setSelectedRecipe(null)}
+      />
+      <FlavorDetailModal
+        tag={selectedFlavor}
+        visible={selectedFlavor !== null}
+        onClose={() => setSelectedFlavor(null)}
+      />
     </SafeAreaView>
   );
 }
@@ -7440,6 +8031,53 @@ function ArchiveBarCard({ post, lang, onPress }: { post: BarPost; lang: Lang; on
         <SaveBtn saved={savedBarIds.includes(post.id)} onPress={() => toggleSavedBar(post.id)} />
       </View>
     </TouchableOpacity>
+  );
+}
+
+function SpiritGridCell({ spirit }: { spirit: SearchSpirit }) {
+  const C = useColors();
+  const [failed, setFailed] = useState(false);
+  const cellSize = Math.floor(SCREEN_W / 3);
+  return (
+    <View style={{ width: cellSize, height: cellSize, backgroundColor: `${C.primary}12`, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+      {!failed ? (
+        <ExpoImage
+          source={{ uri: `https://www.thecocktaildb.com/images/ingredients/${encodeURIComponent(spirit.apiName)}-Medium.png` }}
+          style={{ width: cellSize * 0.62, height: cellSize * 0.82 }}
+          contentFit="contain"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <Text style={{ fontSize: 28 }}>🥃</Text>
+      )}
+      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.40)', paddingHorizontal: 5, paddingVertical: 4 }}>
+        <Text style={{ fontSize: 9, fontWeight: '700', color: '#fff' }} numberOfLines={1}>{spirit.brand}</Text>
+      </View>
+    </View>
+  );
+}
+
+function RecipeGridCell({ recipe, lang }: { recipe: Recipe; lang: Lang }) {
+  const C = useColors();
+  const [failed, setFailed] = useState(false);
+  const cellSize = Math.floor(SCREEN_W / 3);
+  const showImg = !!recipe.heroApiName && !failed;
+  return (
+    <View style={{ width: cellSize, height: cellSize, backgroundColor: `${recipe.color}22`, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+      {showImg ? (
+        <ExpoImage
+          source={{ uri: `https://www.thecocktaildb.com/images/ingredients/${encodeURIComponent(recipe.heroApiName!)}-Medium.png` }}
+          style={{ width: cellSize * 0.62, height: cellSize * 0.82 }}
+          contentFit="contain"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <Text style={{ fontSize: 28 }}>🍹</Text>
+      )}
+      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.40)', paddingHorizontal: 5, paddingVertical: 4 }}>
+        <Text style={{ fontSize: 9, fontWeight: '700', color: '#fff' }} numberOfLines={1}>{lang === 'ko' ? recipe.nameKo : recipe.name}</Text>
+      </View>
+    </View>
   );
 }
 
@@ -7724,69 +8362,59 @@ function ProfileScreen() {
             </Text>
           )}
 
-          {/* Action buttons */}
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <TouchableOpacity onPress={openEdit}
-              style={{ flex: 1, paddingVertical: 8, borderRadius: 10, backgroundColor: C.surfaceHi, borderWidth: 1, borderColor: C.border, alignItems: 'center' }}>
-              <Text style={{ fontSize: 13, fontWeight: '700', color: C.text }}>{lang === 'ko' ? '프로필 편집' : 'Edit Profile'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={{ flex: 1, paddingVertical: 8, borderRadius: 10, backgroundColor: C.surfaceHi, borderWidth: 1, borderColor: C.border, alignItems: 'center' }}>
-              <Text style={{ fontSize: 13, fontWeight: '700', color: C.text }}>{lang === 'ko' ? '내 바 보러가기' : 'My Bar'}</Text>
-            </TouchableOpacity>
+          {/* View toggle — 아카이브 | 취향 DNA */}
+          <View style={[styles.genomeToggle, { marginHorizontal: 0 }]}>
+            {(['archive', 'genome'] as ProfileView[]).map(view => {
+              const active = profileView === view;
+              return (
+                <TouchableOpacity key={view} onPress={() => setProfileView(view)}
+                  style={[styles.genomeToggleTab, active && styles.genomeTabActive]}>
+                  <Text style={[styles.genomeTabTxt, active && styles.genomeTabTxtAct]}>
+                    {view === 'archive' ? t.viewArchive : t.viewGenome}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         </View>
 
         {/* ── Divider ── */}
-        <View style={{ height: 1, backgroundColor: C.border, marginBottom: 0 }} />
-
-        {/* ── Tab toggle ── */}
-        <View style={styles.genomeToggle}>
-          {(['genome', 'archive'] as ProfileView[]).map(view => {
-            const active = profileView === view;
-            return (
-              <TouchableOpacity key={view} onPress={() => setProfileView(view)}
-                style={[styles.genomeToggleTab, active && styles.genomeTabActive]}>
-                <Text style={[styles.genomeTabTxt, active && styles.genomeTabTxtAct]}>
-                  {view === 'genome' ? t.viewGenome : t.viewArchive}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+        <View style={{ height: 1, backgroundColor: C.border }} />
 
         {/* ── Content ── */}
         {profileView === 'genome' ? (
           <TasteGenomeView lang={lang} />
         ) : (
-          <View style={{ paddingHorizontal: 18 }}>
+          <View>
             {/* ♥ Heart archive button */}
-            <TouchableOpacity
-              onPress={() => setHeartModal(true)}
-              style={{
-                flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                backgroundColor: isDark ? 'rgba(255,95,126,0.10)' : 'rgba(255,95,126,0.07)',
-                borderWidth: 1, borderColor: 'rgba(255,95,126,0.30)',
-                borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13,
-                marginTop: 14, marginBottom: 14,
-              }}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <Text style={{ fontSize: 20 }}>♥</Text>
-                <View>
-                  <Text style={{ fontSize: 14, fontWeight: '800', color: '#ff5f7e' }}>
-                    {lang === 'ko' ? '하트한 바 구경하기' : 'Liked Bars Archive'}
-                  </Text>
-                  <Text style={{ fontSize: 11, color: C.textDim, marginTop: 1 }}>
-                    {lang === 'ko' ? `${savedBars.length}개의 바를 저장했어요` : `${savedBars.length} bars saved`}
-                  </Text>
+            <View style={{ paddingHorizontal: 18 }}>
+              <TouchableOpacity
+                onPress={() => setHeartModal(true)}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                  backgroundColor: isDark ? 'rgba(255,95,126,0.10)' : 'rgba(255,95,126,0.07)',
+                  borderWidth: 1, borderColor: 'rgba(255,95,126,0.30)',
+                  borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13,
+                  marginTop: 14, marginBottom: 14,
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Text style={{ fontSize: 20 }}>♥</Text>
+                  <View>
+                    <Text style={{ fontSize: 14, fontWeight: '800', color: '#ff5f7e' }}>
+                      {lang === 'ko' ? '하트한 바 구경하기' : 'Liked Bars Archive'}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: C.textDim, marginTop: 1 }}>
+                      {lang === 'ko' ? `${savedBars.length}개의 바를 저장했어요` : `${savedBars.length} bars saved`}
+                    </Text>
+                  </View>
                 </View>
-              </View>
-              <Text style={{ color: C.textDim, fontSize: 16 }}>›</Text>
-            </TouchableOpacity>
+                <Text style={{ color: C.textDim, fontSize: 16 }}>›</Text>
+              </TouchableOpacity>
+            </View>
 
             {/* Filter chips */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 40, marginBottom: 12 }} contentContainerStyle={{ gap: 8, flexDirection: 'row' }}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 40, marginBottom: 12, paddingLeft: 18 }} contentContainerStyle={{ gap: 8, flexDirection: 'row', paddingRight: 18 }}>
               {FILTERS.map(f => {
                 const active = filter === f.id;
                 return (
@@ -7805,34 +8433,40 @@ function ProfileScreen() {
               })}
             </ScrollView>
 
-            {/* Archive content */}
+            {/* Archive image grid */}
             {archiveCount === 0 ? (
-              <ArchiveEmptyState icon="🗂" label={lang === 'ko' ? '아직 저장된 항목이 없어요' : 'Nothing saved yet'} />
+              <View style={{ paddingHorizontal: 18 }}>
+                <ArchiveEmptyState icon="🗂" label={lang === 'ko' ? '아직 저장된 항목이 없어요' : 'Nothing saved yet'} />
+              </View>
             ) : (
               <>
                 {showSpirits && (
                   <>
                     {filter === 'all' && (
-                      <Text style={{ fontSize: 11, fontWeight: '800', color: C.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 10 }}>
+                      <Text style={{ fontSize: 11, fontWeight: '800', color: C.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 8, paddingHorizontal: 18 }}>
                         {lang === 'ko' ? `저장한 주류 (${savedSpirits.length})` : `Saved Spirits (${savedSpirits.length})`}
                       </Text>
                     )}
                     {savedSpirits.length === 0
-                      ? <ArchiveEmptyState icon="🥃" label={lang === 'ko' ? '저장한 주류가 없어요' : 'No saved spirits'} />
-                      : savedSpirits.map(s => <ArchiveSpiritCard key={s.id} spirit={s} lang={lang} />)
+                      ? <View style={{ paddingHorizontal: 18 }}><ArchiveEmptyState icon="🥃" label={lang === 'ko' ? '저장한 주류가 없어요' : 'No saved spirits'} /></View>
+                      : <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 1, backgroundColor: C.border, marginBottom: 1 }}>
+                          {savedSpirits.map(s => <SpiritGridCell key={s.id} spirit={s} />)}
+                        </View>
                     }
                   </>
                 )}
                 {showRecipes && (
                   <>
                     {filter === 'all' && (
-                      <Text style={{ fontSize: 11, fontWeight: '800', color: C.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 10, marginTop: showSpirits && savedSpirits.length > 0 ? 16 : 0 }}>
+                      <Text style={{ fontSize: 11, fontWeight: '800', color: C.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 8, marginTop: showSpirits && savedSpirits.length > 0 ? 16 : 0, paddingHorizontal: 18 }}>
                         {lang === 'ko' ? `저장한 레시피 (${savedRecipes.length})` : `Saved Recipes (${savedRecipes.length})`}
                       </Text>
                     )}
                     {savedRecipes.length === 0
-                      ? <ArchiveEmptyState icon="🍹" label={lang === 'ko' ? '저장한 레시피가 없어요' : 'No saved recipes'} />
-                      : savedRecipes.map(r => <ArchiveRecipeCard key={r.id} recipe={r} lang={lang} />)
+                      ? <View style={{ paddingHorizontal: 18 }}><ArchiveEmptyState icon="🍹" label={lang === 'ko' ? '저장한 레시피가 없어요' : 'No saved recipes'} /></View>
+                      : <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 1, backgroundColor: C.border }}>
+                          {savedRecipes.map(r => <RecipeGridCell key={r.id} recipe={r} lang={lang} />)}
+                        </View>
                     }
                   </>
                 )}
