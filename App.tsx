@@ -1,6 +1,6 @@
 import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity,
+  View, Text, StyleSheet, TouchableOpacity, TouchableWithoutFeedback,
   ScrollView, Animated, Easing, Dimensions,
   PanResponder, LayoutChangeEvent, Platform, ActivityIndicator,
   TextInput, Keyboard, Alert, Modal, KeyboardAvoidingView,
@@ -180,39 +180,6 @@ async function _bgmUnload(): Promise<void> {
   }
 }
 
-// Visitor bar audio — separate singleton so it doesn't conflict with user's own BGM
-let _visitorSound: Audio.Sound | null = null;
-let _visitorUrl:   string | null = null;
-
-async function _visitorAudioStart(url: string): Promise<boolean> {
-  if (_visitorSound && _visitorUrl === url) {
-    try { await _visitorSound.playAsync(); return true; }
-    catch { try { await _visitorSound.unloadAsync(); } catch {} _visitorSound = null; _visitorUrl = null; }
-  }
-  if (_visitorSound) {
-    try { await _visitorSound.stopAsync();   } catch {}
-    try { await _visitorSound.unloadAsync(); } catch {}
-    _visitorSound = null; _visitorUrl = null;
-  }
-  try {
-    const { sound } = await Audio.Sound.createAsync(
-      { uri: url }, { shouldPlay: true, volume: 0.45 },
-    );
-    _visitorSound = sound; _visitorUrl = url; return true;
-  } catch { _visitorSound = null; _visitorUrl = null; return false; }
-}
-
-async function _visitorAudioPause(): Promise<void> {
-  if (_visitorSound) { try { await _visitorSound.pauseAsync(); } catch {} }
-}
-
-async function _visitorAudioUnload(): Promise<void> {
-  if (_visitorSound) {
-    try { await _visitorSound.stopAsync();   } catch {}
-    try { await _visitorSound.unloadAsync(); } catch {}
-    _visitorSound = null; _visitorUrl = null;
-  }
-}
 
 const DARK_C = {
   bg:        '#0e0e18',
@@ -447,9 +414,9 @@ const T_EN = {
   opened:      'Opened',
   flavorProfile:'FLAVOR PROFILE',
   saveToJournal: 'Save to Taste Journal',
-  viewGenome:    'Taste DNA',
+  viewGenome:    'Signature',
   viewArchive:   'Archive',
-  genomeLabel:   'MY SIGNATURE',
+  genomeLabel:   'TASTE DNA',
   genomeEmpty:   'Mix & save recipes to build your Taste DNA',
   genomeJournal: 'TASTE JOURNAL',
 };
@@ -484,9 +451,9 @@ const T_KO = {
   opened:      '개봉일',
   flavorProfile:'풍미 프로필',
   saveToJournal: '테이스트 저널에 저장',
-  viewGenome:    '취향 DNA',
-  viewArchive:   '아카이브',
-  genomeLabel:   '나의 시그니처',
+  viewGenome:    '시그니처',
+  viewArchive:   '진열장',
+  genomeLabel:   '취향 DNA',
   genomeEmpty:   '믹스를 저장하면 취향 DNA가 만들어집니다',
   genomeJournal: '테이스트 저널',
 };
@@ -575,6 +542,9 @@ interface Recipe {
   stepsEn: string[]; stepsKo: string[];
   color: string;
   heroApiName?: string;
+  simSnapshot?: { glassType: string; iceType: string; layers: Array<{ color: string; frac: number }> };
+  isPublic?: boolean;
+  publicSince?: number;
 }
 
 interface InventoryItem {
@@ -586,7 +556,10 @@ interface InventoryItem {
   purchasePlace?: string;
   openedDate?: string;
   myNote?: { en: string; ko: string };
+  isPublic?: boolean;
+  publicSince?: number;
   cocktailAttempts?: number;
+  simSnapshot?: { glassType: string; iceType: string; layers: Array<{ color: string; frac: number }> };
 }
 interface MixIngredient {
   id: string;
@@ -604,7 +577,6 @@ interface MixIngredient {
 // ─────────────────────────────────────────────────────────────────
 // DATA
 // ─────────────────────────────────────────────────────────────────
-const BOTTLE_VSCALE: number[] = [1.00, 0.93, 0.87, 0.97, 0.95, 0.90, 0.88, 0.96];
 
 
 
@@ -939,6 +911,7 @@ interface AppStore {
   savedBarIds:    string[];   toggleSavedBar:    (id: string) => void;
   savedSpiritIds: string[];   toggleSavedSpirit: (id: string) => void;
   savedRecipeIds: string[];   toggleSavedRecipe: (id: string) => void;
+  likedPostIds:   string[];   toggleLikedPost:   (id: string) => void;
   journalEntries:   JournalEntry[]; addJournalEntry: (e: JournalEntry) => void;
   barModeVisible:   boolean;        setBarModeVisible: (v: boolean) => void;
   authModalVisible: boolean;        setAuthModalVisible: (v: boolean) => void;
@@ -952,11 +925,17 @@ interface AppStore {
   updateInventoryItem: (id: string, updates: Partial<InventoryItem>) => void;
   customRecipes: Recipe[];
   addCustomRecipe: (r: Recipe) => void;
+  updateCustomRecipe: (id: string, updates: Partial<Recipe>) => void;
   seedInjected: boolean;
   setSeedInjected: (v: boolean) => void;
+  profileAvatarIdx:  number;           setProfileAvatarIdx:  (v: number) => void;
   barName:           string;           setBarName:           (v: string) => void;
   myBarBio:          string;           setMyBarBio:          (v: string) => void;
   barNeonColor:      string;           setBarNeonColor:      (v: string) => void;
+  spiritViewCounts:  Record<string, number>;
+  incrementSpiritView: (id: string) => void;
+  recipeViewCounts:  Record<string, number>;
+  incrementRecipeView: (id: string) => void;
   barWallThemeId:    WallThemeId;      setBarWallThemeId:    (v: WallThemeId) => void;
   barLightColor:     string;           setBarLightColor:     (v: string) => void;
   barShelfThemeId:   ShelfThemeId;     setBarShelfThemeId:   (v: ShelfThemeId) => void;
@@ -971,6 +950,10 @@ interface AppStore {
   unlockPremium:        (itemId: string, cost: number) => boolean;
   logCocktailAttempt:   (itemId: string) => void;
   awardNotePoints:      (itemId: string) => void;
+  userFeedPosts: ExploreFeedPost[];
+  addUserFeedPost: (p: ExploreFeedPost) => void;
+  pendingTabIdx: number | null;
+  setPendingTabIdx: (idx: number | null) => void;
 }
 const useAppStore = create<AppStore>()(
   persist(
@@ -995,6 +978,8 @@ const useAppStore = create<AppStore>()(
       toggleSavedSpirit: (id) => set((s) => ({ savedSpiritIds: s.savedSpiritIds.includes(id) ? s.savedSpiritIds.filter(x => x !== id) : [...s.savedSpiritIds, id] })),
       savedRecipeIds: ['r1','r3','r7','r9','r12','r14'],
       toggleSavedRecipe: (id) => set((s) => ({ savedRecipeIds: s.savedRecipeIds.includes(id) ? s.savedRecipeIds.filter(x => x !== id) : [...s.savedRecipeIds, id] })),
+      likedPostIds: [],
+      toggleLikedPost: (id) => set((s) => ({ likedPostIds: s.likedPostIds.includes(id) ? s.likedPostIds.filter(x => x !== id) : [...s.likedPostIds, id] })),
       journalEntries: [],
       addJournalEntry: (entry) => set((s) => ({ journalEntries: [entry, ...s.journalEntries] })),
       barModeVisible: false,
@@ -1024,14 +1009,25 @@ const useAppStore = create<AppStore>()(
       })),
       customRecipes: [],
       addCustomRecipe: (r) => set((s) => ({ customRecipes: [...s.customRecipes, r] })),
+      updateCustomRecipe: (id, updates) => set((s) => ({ customRecipes: s.customRecipes.map(r => r.id === id ? { ...r, ...updates } : r) })),
       seedInjected: false,
       setSeedInjected: (v) => set({ seedInjected: v }),
+      profileAvatarIdx:  0,
+      setProfileAvatarIdx: (v) => set({ profileAvatarIdx: v }),
       barName:        'OntheRock',
       setBarName:        (v) => set({ barName: v }),
       myBarBio:       '',
       setMyBarBio:       (v) => set({ myBarBio: v }),
       barNeonColor:   NEON_PINK_PURPLE,
       setBarNeonColor:   (v) => set({ barNeonColor: v }),
+      spiritViewCounts: {},
+      incrementSpiritView: (id) => set((s) => ({
+        spiritViewCounts: { ...s.spiritViewCounts, [id]: (s.spiritViewCounts[id] ?? 0) + 1 },
+      })),
+      recipeViewCounts: {},
+      incrementRecipeView: (id) => set((s) => ({
+        recipeViewCounts: { ...s.recipeViewCounts, [id]: (s.recipeViewCounts[id] ?? 0) + 1 },
+      })),
       barWallThemeId: 'wood' as WallThemeId,
       setBarWallThemeId: (v) => set({ barWallThemeId: v }),
       barLightColor:  '#ffd060',
@@ -1070,6 +1066,10 @@ const useAppStore = create<AppStore>()(
         if (s.notePointsEarned[itemId]) return {};
         return { userPoints: s.userPoints + 5, notePointsEarned: { ...s.notePointsEarned, [itemId]: true } };
       }),
+      userFeedPosts: [],
+      addUserFeedPost: (p) => set((s) => ({ userFeedPosts: [p, ...s.userFeedPosts] })),
+      pendingTabIdx: null,
+      setPendingTabIdx: (idx) => set({ pendingTabIdx: idx }),
     }),
     {
       name: 'ontherock-app-storage',
@@ -1086,8 +1086,11 @@ const useAppStore = create<AppStore>()(
         shelf1Ids: state.shelf1Ids,
         customRecipes: state.customRecipes,
         seedInjected: state.seedInjected,
+        profileAvatarIdx: state.profileAvatarIdx,
         barName: state.barName,
         barNeonColor: state.barNeonColor,
+        spiritViewCounts: state.spiritViewCounts,
+        recipeViewCounts: state.recipeViewCounts,
         barWallThemeId: state.barWallThemeId,
         barLightColor: state.barLightColor,
         barShelfThemeId: state.barShelfThemeId,
@@ -1098,6 +1101,8 @@ const useAppStore = create<AppStore>()(
         unlockedPremiumIds:   state.unlockedPremiumIds,
         cocktailAttemptDates: state.cocktailAttemptDates,
         notePointsEarned:     state.notePointsEarned,
+        userFeedPosts:        state.userFeedPosts,
+        likedPostIds:         state.likedPostIds,
       }),
     }
   )
@@ -1567,6 +1572,8 @@ function HomeScreenEcho() {
 function SlidingTabContainer() {
   const C = useColors();
   const [activeIdx, setActiveIdx] = useState(0);
+  const pendingTabIdx    = useAppStore(s => s.pendingTabIdx);
+  const setPendingTabIdx = useAppStore(s => s.setPendingTabIdx);
 
   // Master horizontal offset animated value (non-native, needs setValue)
   const slideX  = useRef(new Animated.Value(0)).current;
@@ -1598,6 +1605,13 @@ function SlidingTabContainer() {
       useNativeDriver: false,  // must match setValue calls above
     }).start();
   }, [slideX]);
+
+  useEffect(() => {
+    if (pendingTabIdx !== null) {
+      goTo(pendingTabIdx);
+      setPendingTabIdx(null);
+    }
+  }, [pendingTabIdx, goTo, setPendingTabIdx]);
 
   const panResponder = useRef(PanResponder.create({
     // Only claim gestures that are clearly horizontal.
@@ -1690,9 +1704,10 @@ function SlidingTabContainer() {
 // ─────────────────────────────────────────────────────────────────
 const FLAVOR_KEYS: (keyof FlavorP)[] = ['sweet', 'sour', 'bitter', 'body', 'aroma'];
 
-function RadarChart({ profile, labels, size = 200 }: { profile: FlavorP; labels: string[]; size?: number }) {
+function RadarChart({ profile, labels, size = 200, color }: { profile: FlavorP; labels: string[]; size?: number; color?: string }) {
   const C      = useColors();
   const styles = useStyles();
+  const chartColor = color ?? C.primary;
   const c = size / 2, r = c - 26;
   const pt = (val: number, i: number) => {
     const a = (Math.PI * 2 * i) / 5 - Math.PI / 2;
@@ -1710,8 +1725,8 @@ function RadarChart({ profile, labels, size = 200 }: { profile: FlavorP; labels:
         ))}
         {FLAVOR_KEYS.map((_,i) => { const p=pt(5,i); return <Line key={i} x1={c} y1={c} x2={p.x} y2={p.y} stroke="rgba(128,128,128,0.18)" strokeWidth={1} />; })}
         {FLAVOR_KEYS.map((_,i) => { const p=pt(6.1,i); return <SvgText key={`lb${i}`} x={p.x} y={p.y} fill={C.textDim} fontSize={10} textAnchor="middle" alignmentBaseline="middle">{labels[i]}</SvgText>; })}
-        <Polygon points={polyStr} fill={`${C.primary}30`} stroke={C.primary} strokeWidth={2} />
-        {dataPts.map((p,i) => <Circle key={`d${i}`} cx={p.x} cy={p.y} r={3} fill={C.text} />)}
+        <Polygon points={polyStr} fill={`${chartColor}30`} stroke={chartColor} strokeWidth={2} />
+        {dataPts.map((p,i) => <Circle key={`d${i}`} cx={p.x} cy={p.y} r={3} fill={chartColor} />)}
       </Svg>
     </View>
   );
@@ -1789,6 +1804,269 @@ function BarWall() {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// INGREDIENT SVG ICONS  (fallback when thecocktaildb image fails)
+// ─────────────────────────────────────────────────────────────────
+function IngredientSvgIcon({ name, size, color }: { name: string; size: number; color: string }) {
+  const n = name.toLowerCase();
+  const s = size, cx = s / 2, cy = s / 2;
+
+  if (/juice|lemon|lime|orange|grapefruit|pineapple|cranberry|tomato/.test(n)) {
+    return (
+      <Svg width={s} height={s} viewBox={`0 0 ${s} ${s}`}>
+        <Circle cx={cx} cy={cy} r={s*0.38} fill={color} opacity={0.82} />
+        <Circle cx={cx} cy={cy} r={s*0.26} fill="rgba(255,255,255,0.22)" />
+        <Line x1={cx} y1={cy-s*0.26} x2={cx} y2={cy+s*0.26} stroke={color} strokeWidth={s*0.055} opacity={0.70} />
+        <Line x1={cx-s*0.26} y1={cy} x2={cx+s*0.26} y2={cy} stroke={color} strokeWidth={s*0.055} opacity={0.70} />
+        <Line x1={cx-s*0.18} y1={cy-s*0.18} x2={cx+s*0.18} y2={cy+s*0.18} stroke={color} strokeWidth={s*0.038} opacity={0.50} />
+        <Line x1={cx+s*0.18} y1={cy-s*0.18} x2={cx-s*0.18} y2={cy+s*0.18} stroke={color} strokeWidth={s*0.038} opacity={0.50} />
+        <Circle cx={cx} cy={cy} r={s*0.38} fill="none" stroke={color} strokeWidth={s*0.07} />
+      </Svg>
+    );
+  }
+  if (/syrup|honey|sugar|grenadine|agave/.test(n)) {
+    const d = `M ${cx} ${s*0.14} C ${cx+s*0.28} ${s*0.35} ${cx+s*0.36} ${s*0.55} ${cx+s*0.30} ${s*0.70} C ${cx+s*0.22} ${s*0.84} ${cx-s*0.22} ${s*0.84} ${cx-s*0.30} ${s*0.70} C ${cx-s*0.36} ${s*0.55} ${cx-s*0.28} ${s*0.35} ${cx} ${s*0.14} Z`;
+    return (
+      <Svg width={s} height={s} viewBox={`0 0 ${s} ${s}`}>
+        <Path d={d} fill={color} opacity={0.85} />
+        <Path d={`M ${cx-s*0.10} ${s*0.28} C ${cx-s*0.06} ${s*0.20} ${cx+s*0.04} ${s*0.20} ${cx+s*0.08} ${s*0.28}`} fill="rgba(255,255,255,0.40)" />
+      </Svg>
+    );
+  }
+  if (/bitter/.test(n)) {
+    return (
+      <Svg width={s} height={s} viewBox={`0 0 ${s} ${s}`}>
+        <SvgRect x={cx-s*0.09} y={s*0.10} width={s*0.18} height={s*0.08} rx={s*0.03} fill={color} opacity={0.90} />
+        <SvgRect x={cx-s*0.17} y={s*0.18} width={s*0.34} height={s*0.63} rx={s*0.07} fill={color} opacity={0.82} />
+        <SvgRect x={cx-s*0.08} y={s*0.30} width={s*0.16} height={s*0.26} rx={s*0.03} fill="rgba(255,255,255,0.24)" />
+        <SvgRect x={cx-s*0.05} y={s*0.10} width={s*0.10} height={s*0.08} rx={s*0.02} fill="rgba(0,0,0,0.20)" />
+      </Svg>
+    );
+  }
+  if (/soda|tonic|ginger.?beer|cola|sparkling|club/.test(n)) {
+    return (
+      <Svg width={s} height={s} viewBox={`0 0 ${s} ${s}`}>
+        <SvgRect x={cx-s*0.21} y={s*0.16} width={s*0.42} height={s*0.65} rx={s*0.10} fill={color} opacity={0.82} />
+        <Ellipse cx={cx} cy={s*0.16} rx={s*0.21} ry={s*0.06} fill={color} opacity={0.90} />
+        <Ellipse cx={cx} cy={s*0.81} rx={s*0.21} ry={s*0.06} fill={color} opacity={0.72} />
+        <SvgRect x={cx-s*0.14} y={s*0.27} width={s*0.28} height={s*0.20} rx={s*0.03} fill="rgba(255,255,255,0.22)" />
+        <Circle cx={cx+s*0.09} cy={s*0.14} r={s*0.05} fill="rgba(255,255,255,0.62)" />
+      </Svg>
+    );
+  }
+  if (/mint|basil|herb/.test(n)) {
+    const lp = `M ${cx} ${s*0.78} C ${cx-s*0.28} ${s*0.62} ${cx-s*0.36} ${s*0.40} ${cx} ${s*0.18} C ${cx+s*0.36} ${s*0.40} ${cx+s*0.28} ${s*0.62} ${cx} ${s*0.78} Z`;
+    return (
+      <Svg width={s} height={s} viewBox={`0 0 ${s} ${s}`}>
+        <Path d={lp} fill={color} opacity={0.85} />
+        <Line x1={cx} y1={s*0.20} x2={cx} y2={s*0.76} stroke="rgba(255,255,255,0.38)" strokeWidth={s*0.05} strokeLinecap="round" />
+        <Line x1={cx} y1={s*0.40} x2={cx-s*0.16} y2={s*0.50} stroke="rgba(255,255,255,0.28)" strokeWidth={s*0.04} strokeLinecap="round" />
+        <Line x1={cx} y1={s*0.40} x2={cx+s*0.16} y2={s*0.50} stroke="rgba(255,255,255,0.28)" strokeWidth={s*0.04} strokeLinecap="round" />
+      </Svg>
+    );
+  }
+  if (/egg.?white|cream|milk/.test(n)) {
+    return (
+      <Svg width={s} height={s} viewBox={`0 0 ${s} ${s}`}>
+        <Ellipse cx={cx} cy={cy+s*0.04} rx={s*0.34} ry={s*0.30} fill={color} opacity={0.78} />
+        <Ellipse cx={cx-s*0.08} cy={cy-s*0.06} rx={s*0.14} ry={s*0.11} fill="rgba(255,255,255,0.38)" />
+      </Svg>
+    );
+  }
+  // default: mini bottle
+  const bW = s*0.30, bH = s*0.52, bX = cx-bW/2, bY = s*0.30;
+  const nW = s*0.16, nH = s*0.14, nX = cx-nW/2, nY = bY-nH-s*0.01;
+  const cW = s*0.20, cH = s*0.07, cX = cx-cW/2, cY = nY-cH;
+  return (
+    <Svg width={s} height={s} viewBox={`0 0 ${s} ${s}`}>
+      <SvgRect x={cX} y={cY} width={cW} height={cH} rx={cW*0.18} fill={color} opacity={0.92} />
+      <SvgRect x={nX} y={nY} width={nW} height={nH} fill={color} opacity={0.86} />
+      <SvgRect x={bX} y={bY} width={bW} height={bH} rx={bW*0.14} fill={color} opacity={0.82} />
+      <SvgRect x={bX+bW*0.12} y={bY+bH*0.14} width={bW*0.76} height={bH*0.44} rx={bW*0.08} fill="rgba(255,255,255,0.22)" />
+    </Svg>
+  );
+}
+
+const SPIRIT_SVG_COLORS: Record<string, string> = {
+  whiskey: '#c87018', gin: '#4a80c0', vodka: '#7890cc',
+  rum: '#c06828', tequila: '#8ab030', brandy: '#b04818',
+  liqueur: '#7030a0', other: '#607080',
+};
+
+function ShelfBottleSvg({ spiritType, color, width, height }: {
+  spiritType: string; color?: string; width: number; height: number;
+}) {
+  const c = color ?? SPIRIT_SVG_COLORS[spiritType] ?? SPIRIT_SVG_COLORS.other;
+  const cx = width / 2;
+  const isWide  = ['rum', 'tequila', 'brandy'].includes(spiritType);
+  const isShort = spiritType === 'liqueur';
+
+  const capW = width * 0.28, capH = height * 0.055;
+  const capX = cx - capW/2, capY = height * 0.02;
+  const neckW = width * (isShort ? 0.24 : 0.21);
+  const neckH = height * (isShort ? 0.11 : isWide ? 0.15 : 0.20);
+  const neckX = cx - neckW/2, neckY = capY + capH;
+  const bodyW = width * (isWide ? 0.86 : isShort ? 0.88 : 0.72);
+  const bodyX = cx - bodyW/2;
+  const shdY = neckY + neckH, shdH = height * 0.08;
+  const bodyY = shdY + shdH, bodyH = height * (isShort ? 0.55 : 0.52);
+  const bodyB = bodyY + bodyH, botH = height * 0.035;
+
+  const path = [
+    `M ${capX} ${capY+capH} L ${neckX} ${neckY} L ${neckX} ${neckY+neckH}`,
+    `C ${neckX} ${shdY+shdH*0.6} ${bodyX} ${bodyY-shdH*0.15} ${bodyX} ${bodyY}`,
+    `L ${bodyX} ${bodyB} Q ${bodyX} ${bodyB+botH} ${cx} ${bodyB+botH}`,
+    `Q ${bodyX+bodyW} ${bodyB+botH} ${bodyX+bodyW} ${bodyB}`,
+    `L ${bodyX+bodyW} ${bodyY}`,
+    `C ${bodyX+bodyW} ${bodyY-shdH*0.15} ${neckX+neckW} ${shdY+shdH*0.6} ${neckX+neckW} ${neckY+neckH}`,
+    `L ${neckX+neckW} ${neckY} L ${capX+capW} ${capY+capH} Z`,
+  ].join(' ');
+
+  const lbX = bodyX+bodyW*0.09, lbY = bodyY+bodyH*0.08;
+  const lbW = bodyW*0.82, lbH = bodyH*0.56;
+
+  return (
+    <Svg width={width} height={height}>
+      <Path d={path} fill={c} opacity={0.86} />
+      <SvgRect x={lbX} y={lbY} width={lbW} height={lbH} rx={lbW*0.06} fill="rgba(255,255,255,0.22)" />
+      <SvgRect x={lbX+lbW*0.10} y={lbY+lbH*0.18} width={lbW*0.80} height={lbH*0.11} rx={2} fill="rgba(255,255,255,0.28)" />
+      <SvgRect x={lbX+lbW*0.15} y={lbY+lbH*0.38} width={lbW*0.70} height={lbH*0.08} rx={2} fill="rgba(255,255,255,0.18)" />
+      <SvgRect x={lbX+lbW*0.15} y={lbY+lbH*0.52} width={lbW*0.70} height={lbH*0.08} rx={2} fill="rgba(255,255,255,0.18)" />
+      <SvgRect x={capX} y={capY} width={capW} height={capH} rx={capW*0.15} fill={c} opacity={0.96} />
+      <SvgRect x={capX} y={capY} width={capW} height={capH*0.42} rx={capW*0.15} fill="rgba(0,0,0,0.22)" />
+      <Path
+        d={[
+          `M ${neckX+neckW} ${neckY} L ${neckX+neckW} ${neckY+neckH}`,
+          `C ${neckX+neckW} ${shdY+shdH*0.6} ${bodyX+bodyW} ${bodyY-shdH*0.15} ${bodyX+bodyW} ${bodyY}`,
+          `L ${bodyX+bodyW} ${bodyY+bodyH*0.33} L ${bodyX+bodyW-width*0.07} ${bodyY+bodyH*0.33}`,
+          `L ${bodyX+bodyW-width*0.07} ${bodyY}`,
+          `C ${bodyX+bodyW-width*0.07} ${bodyY-shdH*0.15} ${neckX+neckW-width*0.07} ${shdY+shdH*0.6} ${neckX+neckW-width*0.07} ${neckY+neckH}`,
+          `L ${neckX+neckW-width*0.07} ${neckY} Z`,
+        ].join(' ')}
+        fill="rgba(255,255,255,0.14)"
+      />
+    </Svg>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// SPIRIT CUTOUT SVG  — brand-specific bottle illustrations for spirits
+// that don't have CocktailDB images (Japanese Whisky, Tennessee Whiskey, Scotch…)
+// ─────────────────────────────────────────────────────────────────
+function SpiritCutoutSvg({ apiName, spiritType, width, height }: {
+  apiName: string; spiritType: string; width: number; height: number;
+}) {
+  const cx = width / 2;
+  const w = width, h = height;
+
+  // ── Jack Daniel's style: square black bottle ────────────────────
+  if (apiName === 'Tennessee Whiskey') {
+    const bW = w * 0.74, bX = cx - bW / 2;
+    const nW = w * 0.26, nX = cx - nW / 2;
+    const capH = h * 0.05, neckH = h * 0.18;
+    const bodyH = h * 0.60, bodyY = h * 0.30, bodyB = bodyY + bodyH;
+    const botH = h * 0.035;
+    return (
+      <Svg width={w} height={h}>
+        {/* Cap */}
+        <SvgRect x={nX + nW * 0.1} y={h * 0.01} width={nW * 0.8} height={capH} rx={2} fill="#1a1a1a" />
+        {/* Neck */}
+        <SvgRect x={nX} y={h * 0.01 + capH} width={nW} height={neckH} fill="#222" />
+        {/* Shoulder — square taper */}
+        <Path d={`M ${nX} ${h*0.01+capH+neckH} L ${bX} ${bodyY} L ${bX+bW} ${bodyY} L ${nX+nW} ${h*0.01+capH+neckH} Z`} fill="#1c1c1c" />
+        {/* Body */}
+        <SvgRect x={bX} y={bodyY} width={bW} height={bodyH} fill="#111" />
+        {/* Bottom curve */}
+        <Path d={`M ${bX} ${bodyB} Q ${bX} ${bodyB+botH} ${cx} ${bodyB+botH} Q ${bX+bW} ${bodyB+botH} ${bX+bW} ${bodyB} Z`} fill="#111" />
+        {/* Label */}
+        <SvgRect x={bX+bW*0.09} y={bodyY+bodyH*0.10} width={bW*0.82} height={bodyH*0.60} rx={3} fill="rgba(255,255,255,0.13)" />
+        <SvgRect x={bX+bW*0.15} y={bodyY+bodyH*0.15} width={bW*0.70} height={bodyH*0.09} rx={2} fill="rgba(255,255,255,0.30)" />
+        <SvgRect x={bX+bW*0.20} y={bodyY+bodyH*0.28} width={bW*0.60} height={bodyH*0.06} rx={1} fill="rgba(255,255,255,0.18)" />
+        <SvgRect x={bX+bW*0.20} y={bodyY+bodyH*0.38} width={bW*0.60} height={bodyH*0.06} rx={1} fill="rgba(255,255,255,0.18)" />
+        {/* Highlight */}
+        <SvgRect x={bX+bW*0.82} y={bodyY} width={bW*0.06} height={bodyH} rx={2} fill="rgba(255,255,255,0.07)" />
+      </Svg>
+    );
+  }
+
+  // ── Yamazaki style: round amber Japanese whisky bottle ──────────
+  if (apiName === 'Japanese Whisky') {
+    const bW = w * 0.72, bX = cx - bW / 2;
+    const nW = w * 0.22, nX = cx - nW / 2;
+    const capH = h * 0.04;
+    const neckY = h * 0.04 + capH, neckH = h * 0.22;
+    const shdH = h * 0.09;
+    const bodyY = neckY + neckH + shdH, bodyH = h * 0.53, bodyB = bodyY + bodyH;
+    const botH = h * 0.04;
+    const col = '#c47a1e';
+    return (
+      <Svg width={w} height={h}>
+        {/* Cap — cork style */}
+        <SvgRect x={nX + nW * 0.05} y={h * 0.01} width={nW * 0.9} height={capH} rx={nW * 0.2} fill="#8B6914" />
+        <SvgRect x={nX + nW * 0.15} y={h * 0.01} width={nW * 0.7} height={capH * 0.5} rx={2} fill="rgba(255,255,255,0.20)" />
+        {/* Neck */}
+        <SvgRect x={nX} y={neckY} width={nW} height={neckH} fill={col} />
+        {/* Shoulder — smooth curve */}
+        <Path d={`M ${nX} ${neckY+neckH} C ${nX} ${neckY+neckH+shdH*0.6} ${bX} ${bodyY-shdH*0.2} ${bX} ${bodyY} L ${bX+bW} ${bodyY} C ${bX+bW} ${bodyY-shdH*0.2} ${nX+nW} ${neckY+neckH+shdH*0.6} ${nX+nW} ${neckY+neckH} Z`} fill={col} />
+        {/* Body */}
+        <SvgRect x={bX} y={bodyY} width={bW} height={bodyH} fill={col} />
+        {/* Bottom */}
+        <Path d={`M ${bX} ${bodyB} Q ${bX} ${bodyB+botH} ${cx} ${bodyB+botH} Q ${bX+bW} ${bodyB+botH} ${bX+bW} ${bodyB} Z`} fill={col} />
+        {/* Label */}
+        <SvgRect x={bX+bW*0.08} y={bodyY+bodyH*0.08} width={bW*0.84} height={bodyH*0.62} rx={4} fill="rgba(255,248,220,0.22)" />
+        <SvgRect x={bX+bW*0.14} y={bodyY+bodyH*0.13} width={bW*0.72} height={bodyH*0.10} rx={2} fill="rgba(255,255,255,0.32)" />
+        <SvgRect x={bX+bW*0.20} y={bodyY+bodyH*0.29} width={bW*0.60} height={bodyH*0.06} rx={1} fill="rgba(255,255,255,0.18)" />
+        <SvgRect x={bX+bW*0.20} y={bodyY+bodyH*0.40} width={bW*0.60} height={bodyH*0.06} rx={1} fill="rgba(255,255,255,0.14)" />
+        {/* Highlight */}
+        <Path d={`M ${bX+bW*0.82} ${bodyY} L ${bX+bW*0.88} ${bodyY} L ${bX+bW*0.88} ${bodyB} L ${bX+bW*0.82} ${bodyB} Z`} fill="rgba(255,255,255,0.10)" />
+      </Svg>
+    );
+  }
+
+  // ── Glenfarclas style: classic Scotch bottle ────────────────────
+  if (apiName === 'Scotch') {
+    const bW = w * 0.68, bX = cx - bW / 2;
+    const nW = w * 0.20, nX = cx - nW / 2;
+    const capH = h * 0.045;
+    const neckY = h * 0.02 + capH, neckH = h * 0.24;
+    const shdH = h * 0.08;
+    const bodyY = neckY + neckH + shdH, bodyH = h * 0.52, bodyB = bodyY + bodyH;
+    const botH = h * 0.035;
+    const col = '#7B3F00';
+    return (
+      <Svg width={w} height={h}>
+        <SvgRect x={nX + nW * 0.1} y={h * 0.02} width={nW * 0.8} height={capH} rx={3} fill="#5a2d00" />
+        <SvgRect x={nX} y={neckY} width={nW} height={neckH} fill={col} />
+        <Path d={`M ${nX} ${neckY+neckH} C ${nX} ${neckY+neckH+shdH*0.7} ${bX} ${bodyY-shdH*0.1} ${bX} ${bodyY} L ${bX+bW} ${bodyY} C ${bX+bW} ${bodyY-shdH*0.1} ${nX+nW} ${neckY+neckH+shdH*0.7} ${nX+nW} ${neckY+neckH} Z`} fill={col} />
+        <SvgRect x={bX} y={bodyY} width={bW} height={bodyH} fill={col} />
+        <Path d={`M ${bX} ${bodyB} Q ${bX} ${bodyB+botH} ${cx} ${bodyB+botH} Q ${bX+bW} ${bodyB+botH} ${bX+bW} ${bodyB} Z`} fill={col} />
+        <SvgRect x={bX+bW*0.09} y={bodyY+bodyH*0.09} width={bW*0.82} height={bodyH*0.58} rx={4} fill="rgba(255,240,200,0.18)" />
+        <SvgRect x={bX+bW*0.15} y={bodyY+bodyH*0.14} width={bW*0.70} height={bodyH*0.09} rx={2} fill="rgba(255,255,255,0.28)" />
+        <SvgRect x={bX+bW*0.20} y={bodyY+bodyH*0.28} width={bW*0.60} height={bodyH*0.06} rx={1} fill="rgba(255,255,255,0.16)" />
+        <SvgRect x={bX+bW*0.20} y={bodyY+bodyH*0.39} width={bW*0.60} height={bodyH*0.06} rx={1} fill="rgba(255,255,255,0.14)" />
+        <Path d={`M ${bX+bW*0.84} ${bodyY} L ${bX+bW*0.90} ${bodyY} L ${bX+bW*0.90} ${bodyB} L ${bX+bW*0.84} ${bodyB} Z`} fill="rgba(255,255,255,0.09)" />
+      </Svg>
+    );
+  }
+
+  // ── Default: use existing generic bottle ────────────────────────
+  return <ShelfBottleSvg spiritType={spiritType} width={width} height={height} />;
+}
+
+function SpiritModalImage({ apiName, spiritType, imgW, imgH }: {
+  apiName: string; spiritType: string; imgW: number; imgH: number;
+}) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <SpiritCutoutSvg apiName={apiName} spiritType={spiritType} width={imgW} height={imgH} />;
+  return (
+    <ExpoImage
+      source={{ uri: `https://www.thecocktaildb.com/images/ingredients/${encodeURIComponent(apiName)}-Medium.png` }}
+      style={{ width: imgW, height: imgH }} contentFit="contain"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
 // SHELF BOTTLE  (pure display — PanResponder lives on the bottles container in ShelfRow)
 // ─────────────────────────────────────────────────────────────────
 function ShelfBottle({ item, isFocused, isAnyFocused,
@@ -1799,7 +2077,8 @@ function ShelfBottle({ item, isFocused, isAnyFocused,
   sharedDragAnim: Animated.ValueXY;
 }) {
   const imgH   = Math.round(BOTTLE_H * 0.87);
-  const imgUri = `https://www.thecocktaildb.com/images/ingredients/${item.apiName}-Medium.png`;
+  const imgUri = `https://www.thecocktaildb.com/images/ingredients/${encodeURIComponent(item.apiName)}-Medium.png`;
+  const [imgFailed, setImgFailed] = useState(false);
 
   const opacityAnim = useRef(new Animated.Value(1)).current;
   const scaleAnim   = useRef(new Animated.Value(1)).current;
@@ -1837,8 +2116,15 @@ function ShelfBottle({ item, isFocused, isAnyFocused,
           shadowOffset: { width: 0, height: isDragging ? 18 : 6 },
           shadowOpacity: isDragging ? 0.70 : 0.40,
           shadowRadius: isDragging ? 22 : 12,
+          alignItems: 'center', justifyContent: 'flex-end',
         }}>
-          <ExpoImage source={{ uri: imgUri }} style={{ width: BOTTLE_W, height: imgH }} contentFit="contain" transition={200} />
+          {item.simSnapshot ? (
+            <MiniGlassThumbnail snapshot={item.simSnapshot} width={BOTTLE_W} height={imgH} forceDark />
+          ) : imgFailed ? (
+            <ShelfBottleSvg spiritType={item.spiritType} width={BOTTLE_W} height={imgH} />
+          ) : (
+            <ExpoImage source={{ uri: imgUri }} style={{ width: BOTTLE_W, height: imgH }} contentFit="contain" transition={200} onError={() => setImgFailed(true)} />
+          )}
         </Animated.View>
       </Animated.View>
     </View>
@@ -1980,12 +2266,14 @@ function WoodPlank({ shelfW, shelfThemeId: shelfThemeIdProp }: { shelfW: number;
 // PanResponder lives on a plain overlay View (not the Animated.View) so that
 // Android hit areas are always at the correct screen position.
 // ─────────────────────────────────────────────────────────────────
-function ShelfRow({ plankY, items, focusedId, onTapBottle, draggingId, onDragStart, onDragEnd, onPageChange }: {
+function ShelfRow({ plankY, items, focusedId, onTapBottle, draggingId, onDragStart, onDragEnd, onDragMove, isTrashDrop, onPageChange }: {
   plankY: number; items: InventoryItem[];
   focusedId: string | null; onTapBottle: (item: InventoryItem) => void;
   draggingId: string | null;
   onDragStart: (id: string) => void;
   onDragEnd: (id: string, releaseX: number, releaseY: number) => void;
+  onDragMove?: (id: string, absX: number, absY: number) => void;
+  isTrashDrop?: (absX: number, absY: number) => boolean;
   onPageChange?: (page: number) => void;
 }) {
   const isDark = useIsDark();
@@ -2009,8 +2297,8 @@ function ShelfRow({ plankY, items, focusedId, onTapBottle, draggingId, onDragSta
   // Update pageCount every render so PanResponder reads the latest value via .current
   pageCountRef.current = Math.max(1, Math.ceil(items.length / SLOT_COUNT));
 
-  const cbRef = useRef({ onDragStart, onDragEnd, onTapBottle, onPageChange });
-  useEffect(() => { cbRef.current = { onDragStart, onDragEnd, onTapBottle, onPageChange }; });
+  const cbRef = useRef({ onDragStart, onDragEnd, onDragMove, isTrashDrop, onTapBottle, onPageChange });
+  useEffect(() => { cbRef.current = { onDragStart, onDragEnd, onDragMove, isTrashDrop, onTapBottle, onPageChange }; });
 
   const panResponder = useRef(PanResponder.create({
     onStartShouldSetPanResponder: () => true,
@@ -2047,6 +2335,9 @@ function ShelfRow({ plankY, items, focusedId, onTapBottle, draggingId, onDragSta
       }
       if (isDraggingRef.current) {
         sharedDragAnim.setValue({ x: gs.dx, y: gs.dy });
+        if (touchItemRef.current) {
+          cbRef.current.onDragMove?.(touchItemRef.current.id, gs.x0 + gs.dx, gs.y0 + gs.dy);
+        }
         return;
       }
 
@@ -2102,8 +2393,12 @@ function ShelfRow({ plankY, items, focusedId, onTapBottle, draggingId, onDragSta
       if (wasDragging && touched) {
         const releaseX = gs.x0 + gs.dx;
         const releaseY = gs.y0 + gs.dy;
-        Animated.spring(sharedDragAnim, { toValue: { x: 0, y: 0 }, useNativeDriver: true, friction: 10, tension: 80 })
-          .start(() => cbRef.current.onDragEnd(touched.id, releaseX, releaseY));
+        if (cbRef.current.isTrashDrop?.(releaseX, releaseY)) {
+          cbRef.current.onDragEnd(touched.id, releaseX, releaseY);
+        } else {
+          Animated.spring(sharedDragAnim, { toValue: { x: 0, y: 0 }, useNativeDriver: true, friction: 10, tension: 80 })
+            .start(() => cbRef.current.onDragEnd(touched.id, releaseX, releaseY));
+        }
       } else if (!wasDragging && touched && Math.abs(gs.dx) < 8 && Math.abs(gs.dy) < 8) {
         cbRef.current.onTapBottle(touched);
       }
@@ -2401,8 +2696,19 @@ function BarCounterDecor({ counterThemeId: counterThemeIdProp }: { counterThemeI
 // ─────────────────────────────────────────────────────────────────
 // WALL PLAYER  (CD / Cassette / Radio — style and color from store)
 // ─────────────────────────────────────────────────────────────────
-function WallCDPlayer() {
-  const { bgmPlaying, barPlayerStyleId, barPlayerColorId } = useAppStore();
+function WallCDPlayer({
+  playerStyleOverride,
+  playerColorOverride,
+  staticMode = false,
+}: {
+  playerStyleOverride?: PlayerStyleId;
+  playerColorOverride?: PlayerColorId;
+  staticMode?: boolean;
+} = {}) {
+  const { bgmPlaying: storeBgm, barPlayerStyleId: storeStyle, barPlayerColorId: storeColor } = useAppStore();
+  const bgmPlaying       = staticMode ? false : storeBgm;
+  const barPlayerStyleId = playerStyleOverride ?? storeStyle;
+  const barPlayerColorId = playerColorOverride ?? storeColor;
   const isDark    = useIsDark();
   const spinAnim  = useRef(new Animated.Value(0)).current;
   const glowAnim  = useRef(new Animated.Value(0)).current;
@@ -2460,7 +2766,7 @@ function WallCDPlayer() {
     const CR = 21, CDR = CR - 1;
     const dotFill = isDark ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.18)';
     return (
-      <TouchableOpacity onPress={toggleBgm} activeOpacity={0.8} style={{ width: W, height: H }}>
+      <TouchableOpacity onPress={staticMode ? undefined : toggleBgm} activeOpacity={staticMode ? 1 : 0.8} disabled={staticMode} style={{ width: W, height: H }}>
         <Animated.View pointerEvents="none" style={{ position: 'absolute', left: -7, top: -7, width: BW + 14, height: BH + 14, borderRadius: 17, opacity: glowAnim, borderWidth: 1, borderColor: 'rgba(248,192,64,0.55)', shadowColor: '#f8c040', shadowRadius: 18, shadowOpacity: 1, shadowOffset: { width: 0, height: 0 } }} />
         <Svg width={W} height={BH} style={{ position: 'absolute', top: 0 }} pointerEvents="none">
           <SvgRect x={0} y={0} width={BW} height={BH} rx={10} fill={bodyFill} />
@@ -2501,7 +2807,7 @@ function WallCDPlayer() {
     const R1X = WX + 10, R2X = WX + WW - 10, RY = WY + WH / 2;
     const RR = 7;
     return (
-      <TouchableOpacity onPress={toggleBgm} activeOpacity={0.8} style={{ width: W, height: H }}>
+      <TouchableOpacity onPress={staticMode ? undefined : toggleBgm} activeOpacity={staticMode ? 1 : 0.8} disabled={staticMode} style={{ width: W, height: H }}>
         <Animated.View pointerEvents="none" style={{ position: 'absolute', left: -7, top: -7, width: BW + 14, height: BH + 14, borderRadius: 14, opacity: glowAnim, borderWidth: 1, borderColor: 'rgba(248,192,64,0.55)', shadowColor: '#f8c040', shadowRadius: 18, shadowOpacity: 1, shadowOffset: { width: 0, height: 0 } }} />
         <Svg width={W} height={BH} style={{ position: 'absolute', top: 0 }} pointerEvents="none">
           {/* Body */}
@@ -2541,7 +2847,7 @@ function WallCDPlayer() {
   const totalH   = H + antennaH;
   const dialCX = BW - 16, dialCY = BH / 2, dialR = 11;
   return (
-    <TouchableOpacity onPress={toggleBgm} activeOpacity={0.8} style={{ width: W, height: totalH }}>
+    <TouchableOpacity onPress={staticMode ? undefined : toggleBgm} activeOpacity={staticMode ? 1 : 0.8} disabled={staticMode} style={{ width: W, height: totalH }}>
       {/* Antenna */}
       <Svg width={W} height={antennaH + 4} style={{ position: 'absolute', top: 0 }} pointerEvents="none">
         <Line x1={BW - 12} y1={antennaH} x2={BW - 4} y2={2} stroke={isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.30)'} strokeWidth="1.4" strokeLinecap="round" />
@@ -2684,6 +2990,7 @@ function CounterDecorations() {
 function BottomPanel({ item, t, onClose, onRemove }: { item: InventoryItem; t: Texts; onClose: () => void; onRemove?: (id: string) => void }) {
   const { lang, updateInventoryItem, removeInventoryItem, logCocktailAttempt, awardNotePoints, cocktailAttemptDates } = useAppStore();
   const C        = useColors();
+  const isDark   = useIsDark();
   const today    = new Date().toISOString().slice(0, 10);
   const alreadyLoggedToday = cocktailAttemptDates[item.id] === today;
   const styles   = useStyles();
@@ -2793,6 +3100,54 @@ function BottomPanel({ item, t, onClose, onRemove }: { item: InventoryItem; t: T
             if (txt.length >= 15) awardNotePoints(item.id);
           }}
         />
+      </View>
+
+      {/* 탐색 피드 공개 토글 */}
+      <View style={{
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+        backgroundColor: C.surfaceHi, borderRadius: 14, padding: 16, marginBottom: 14,
+        borderWidth: 1,
+        borderColor: item.isPublic
+          ? (isDark ? 'rgba(255,255,255,0.28)' : 'rgba(0,0,0,0.22)')
+          : C.border,
+      }}>
+        <View style={{ flex: 1, marginRight: 12 }}>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: C.text }}>
+            {lang === 'ko' ? '탐색 피드에 공개' : 'Share to Explore'}
+          </Text>
+          <Text style={{ fontSize: 11, color: C.textDim, marginTop: 2 }}>
+            {lang === 'ko'
+              ? '이 기록이 탐색 탭 피드에 노출됩니다'
+              : 'This record will appear in the Explore feed'}
+          </Text>
+        </View>
+        <TouchableOpacity
+          onPress={() => updateInventoryItem(item.id, {
+            isPublic: !item.isPublic,
+            ...(!item.isPublic ? { publicSince: Date.now() } : {}),
+          })}
+          activeOpacity={0.8}
+          style={{
+            width: 46, height: 28, borderRadius: 14,
+            backgroundColor: item.isPublic
+              ? C.primary
+              : (isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.09)'),
+            borderWidth: 1,
+            borderColor: item.isPublic
+              ? C.primary
+              : (isDark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.14)'),
+            justifyContent: 'center',
+            paddingHorizontal: 3,
+          }}
+        >
+          <View style={{
+            width: 22, height: 22, borderRadius: 11,
+            backgroundColor: '#fff',
+            alignSelf: item.isPublic ? 'flex-end' : 'flex-start',
+            shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.22, shadowRadius: 2, elevation: 2,
+          }} />
+        </TouchableOpacity>
       </View>
 
       {/* Record Info */}
@@ -3061,74 +3416,168 @@ const DIM_LABELS: Record<keyof FlavorP, { en: string; ko: string }> = {
 // ─────────────────────────────────────────────────────────────────
 // ATMOSPHERE CARD
 // ─────────────────────────────────────────────────────────────────
-function AtmosphereCard({ hour, lang, onBarMode, isActive }: {
-  hour: number; lang: Lang; onBarMode: () => void; isActive: boolean;
-}) {
+function AtmosphereCard({ hour, lang }: { hour: number; lang: Lang }) {
   const C      = useColors();
   const isDark = useIsDark();
-  const { barWallThemeId } = useAppStore();
+  const { barWallThemeId, bgmPlaying, bgmMoodIdx } = useAppStore();
   const mood      = getMoodByHour(hour);
   const wallTheme = BAR_WALL_THEMES.find(t => t.id === barWallThemeId) ?? BAR_WALL_THEMES[0];
   const cardBg    = isDark ? wallTheme.darkBg : wallTheme.lightBg;
+  const track     = BGM_TRACKS[bgmMoodIdx];
+  const [page, setPage] = useState(0);
+  const scrollRef  = useRef<ScrollView>(null);
+  const autoPage   = useRef(0);
+  const resetRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const advance = () => {
+      if (resetRef.current) { clearTimeout(resetRef.current); resetRef.current = null; }
+      if (autoPage.current === 0) {
+        autoPage.current = 1;
+        scrollRef.current?.scrollTo({ x: SCREEN_W, animated: true });
+        setPage(1);
+      } else {
+        // page1 → page2(page0 복사본) 앞방향, 완료 후 page0으로 즉시 리셋
+        autoPage.current = 2;
+        scrollRef.current?.scrollTo({ x: 2 * SCREEN_W, animated: true });
+        setPage(0);
+        resetRef.current = setTimeout(() => {
+          scrollRef.current?.scrollTo({ x: 0, animated: false });
+          autoPage.current = 0;
+          resetRef.current = null;
+        }, 500);
+      }
+    };
+    const timer = setInterval(advance, 10000);
+    return () => {
+      clearInterval(timer);
+      if (resetRef.current) clearTimeout(resetRef.current);
+    };
+  }, []);
+
+  const timeLabel = lang === 'ko'
+    ? (hour < 6 ? '오늘 밤의 분위기' : hour < 12 ? '오늘 아침의 분위기' : hour < 17 ? '오늘 오후의 분위기' : hour < 20 ? '오늘 저녁의 분위기' : '오늘 밤의 분위기')
+    : (hour < 6 ? "TONIGHT'S ATMOSPHERE" : hour < 12 ? "THIS MORNING'S VIBE" : hour < 17 ? "THIS AFTERNOON'S VIBE" : hour < 20 ? "THIS EVENING'S VIBE" : "TONIGHT'S ATMOSPHERE");
+
+  const pillStyle = {
+    flexDirection: 'row' as const, alignItems: 'center' as const, gap: 4,
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10,
+    backgroundColor: `${mood.lightColor}10`, borderWidth: 1, borderColor: `${mood.lightColor}28`,
+  };
 
   return (
-    <TouchableOpacity
-      onPress={onBarMode}
-      activeOpacity={0.85}
-      style={{
-        marginHorizontal: 22, marginTop: 8, marginBottom: 6,
-        backgroundColor: cardBg,
-        borderRadius: 16, borderWidth: 1, borderColor: isActive ? `${mood.lightColor}55` : C.border,
-        overflow: 'hidden',
-      }}
-    >
-      <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, backgroundColor: mood.lightColor, opacity: 0.9 }} />
-
-      {/* Content */}
-      <View style={{ padding: 14, paddingLeft: 18, paddingBottom: 14 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-          <Text style={{ fontSize: 10, fontWeight: '800', color: C.textDim, letterSpacing: 1.2, textTransform: 'uppercase', flex: 1 }}>
-            {lang === 'ko'
-              ? (hour < 6 ? '오늘 밤의 분위기' : hour < 12 ? '오늘 아침의 분위기' : hour < 17 ? '오늘 오후의 분위기' : hour < 20 ? '오늘 저녁의 분위기' : '오늘 밤의 분위기')
-              : (hour < 6 ? "TONIGHT'S ATMOSPHERE" : hour < 12 ? "THIS MORNING'S VIBE" : hour < 17 ? "THIS AFTERNOON'S VIBE" : hour < 20 ? "THIS EVENING'S VIBE" : "TONIGHT'S ATMOSPHERE")}
+    <View style={{ marginTop: 6, marginBottom: 0 }}>
+      <ScrollView
+        ref={scrollRef}
+        horizontal pagingEnabled showsHorizontalScrollIndicator={false}
+        onMomentumScrollEnd={(e) => {
+          const p = Math.round(e.nativeEvent.contentOffset.x / SCREEN_W);
+          autoPage.current = p;
+          setPage(p >= 2 ? 0 : p);
+        }}
+        style={{ borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border }}
+      >
+        {/* ── Page 0: 요약 ── */}
+        <View style={{ width: SCREEN_W, backgroundColor: cardBg, paddingTop: 8, paddingBottom: 8, paddingLeft: 16, paddingRight: 12 }}>
+          <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, backgroundColor: mood.lightColor, opacity: 0.9 }} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+            <Text style={{ fontSize: 9, fontWeight: '800', color: C.textDim, letterSpacing: 1.1, textTransform: 'uppercase', flex: 1 }}>
+              {timeLabel}
+            </Text>
+            <Text style={{ fontSize: 15, marginRight: 4 }}>{mood.emoji}</Text>
+          </View>
+          <Text style={{ fontSize: 14, fontWeight: '800', color: C.text, letterSpacing: -0.3, marginBottom: 6 }}>
+            {lang === 'ko' ? mood.cocktailKo : mood.cocktailEn}
           </Text>
-          <Text style={{ fontSize: 18, marginRight: 14 }}>{mood.emoji}</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, backgroundColor: C.bg, borderWidth: 1, borderColor: C.border }}>
+              <Text style={{ fontSize: 10 }}>♫</Text>
+              <Text style={{ fontSize: 10, color: C.textDim, fontWeight: '500' }}>{lang === 'ko' ? mood.musicGenreKo : mood.musicGenre}</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, backgroundColor: C.bg, borderWidth: 1, borderColor: C.border }}>
+              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: mood.lightColor }} />
+              <Text style={{ fontSize: 10, color: C.textDim, fontWeight: '500' }}>{lang === 'ko' ? mood.lightLabelKo : mood.lightLabel}</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, backgroundColor: C.bg, borderWidth: 1, borderColor: C.border }}>
+              <Text style={{ fontSize: 10 }}>🎬</Text>
+              <Text style={{ fontSize: 10, color: C.textDim, fontWeight: '500' }} numberOfLines={1}>{lang === 'ko' ? mood.movieKo : mood.movieEn}</Text>
+            </View>
+          </View>
+          <Text style={{ position: 'absolute', bottom: 6, right: 10, fontSize: 14, color: C.textDim, opacity: 0.5 }}>›</Text>
         </View>
 
-        <Text style={{ fontSize: 17, fontWeight: '800', color: C.text, letterSpacing: -0.3, marginBottom: 10 }}>
-          {lang === 'ko' ? mood.cocktailKo : mood.cocktailEn}
-        </Text>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, backgroundColor: C.bg, borderWidth: 1, borderColor: C.border }}>
-            <Text style={{ fontSize: 11 }}>♫</Text>
-            <Text style={{ fontSize: 11, color: C.textDim, fontWeight: '500' }}>
-              {lang === 'ko' ? mood.musicGenreKo : mood.musicGenre}
-            </Text>
+        {/* ── Page 1: 상세 ── */}
+        <View style={{ width: SCREEN_W, backgroundColor: cardBg, paddingHorizontal: 16, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <View style={{ width: 56, height: 76, alignItems: 'center', justifyContent: 'center' }}>
+            <View style={{ position: 'absolute', width: 48, height: 48, borderRadius: 24, backgroundColor: `${mood.lightColor}1A` }} />
+            <ExpoImage source={{ uri: mood.cocktailImg }} style={{ width: 50, height: 72 }} contentFit="contain" />
           </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, backgroundColor: C.bg, borderWidth: 1, borderColor: C.border }}>
-            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: mood.lightColor }} />
-            <Text style={{ fontSize: 11, color: C.textDim, fontWeight: '500' }}>
-              {lang === 'ko' ? mood.lightLabelKo : mood.lightLabel}
+          <View style={{ flex: 1 }}>
+            <NeonText text="On The Rock" color={mood.lightColor} size={12} script />
+            <Text style={{ fontSize: 10, color: C.textDim, marginTop: 1, marginBottom: 6 }}>
+              {lang === 'ko' ? mood.timeLabelKo : mood.timeLabel}
             </Text>
+            <View style={{ gap: 4 }}>
+              <View style={pillStyle}>
+                <Text style={{ fontSize: 11, color: bgmPlaying ? mood.lightColor : C.textDim }}>♫</Text>
+                <Text style={{ fontSize: 10, color: C.textDim, fontWeight: '500' }}>
+                  {bgmPlaying ? track.label : (lang === 'ko' ? mood.musicGenreKo : mood.musicGenre)}
+                </Text>
+              </View>
+              <View style={pillStyle}>
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: mood.lightColor }} />
+                <Text style={{ fontSize: 10, color: C.textDim, fontWeight: '500' }}>{lang === 'ko' ? mood.lightLabelKo : mood.lightLabel}</Text>
+              </View>
+              <View style={pillStyle}>
+                <Text style={{ fontSize: 11, color: C.textDim }}>🎬</Text>
+                <Text style={{ fontSize: 10, color: C.textDim, fontWeight: '500' }}>{lang === 'ko' ? mood.movieKo : mood.movieEn}</Text>
+              </View>
+            </View>
           </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, backgroundColor: C.bg, borderWidth: 1, borderColor: C.border }}>
-            <Text style={{ fontSize: 11 }}>🎬</Text>
-            <Text style={{ fontSize: 11, color: C.textDim, fontWeight: '500' }} numberOfLines={1}>
-              {lang === 'ko' ? mood.movieKo : mood.movieEn}
-            </Text>
-          </View>
+          <Text style={{ position: 'absolute', bottom: 6, left: 10, fontSize: 14, color: C.textDim, opacity: 0.5 }}>‹</Text>
         </View>
 
-        {/* Arrow indicator — bottom right */}
-        <Text style={{
-          position: 'absolute', bottom: 10, right: 14,
-          fontSize: 13, fontWeight: '700',
-          color: isActive ? mood.lightColor : C.textDim,
-        }}>
-          {isActive ? '▲' : '▼'}
-        </Text>
+        {/* ── Page 2: Page 0 복사본 (앞방향 루프용) ── */}
+        <View style={{ width: SCREEN_W, backgroundColor: cardBg, paddingTop: 8, paddingBottom: 8, paddingLeft: 16, paddingRight: 12 }}>
+          <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, backgroundColor: mood.lightColor, opacity: 0.9 }} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+            <Text style={{ fontSize: 9, fontWeight: '800', color: C.textDim, letterSpacing: 1.1, textTransform: 'uppercase', flex: 1 }}>
+              {timeLabel}
+            </Text>
+            <Text style={{ fontSize: 15, marginRight: 4 }}>{mood.emoji}</Text>
+          </View>
+          <Text style={{ fontSize: 14, fontWeight: '800', color: C.text, letterSpacing: -0.3, marginBottom: 6 }}>
+            {lang === 'ko' ? mood.cocktailKo : mood.cocktailEn}
+          </Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, backgroundColor: C.bg, borderWidth: 1, borderColor: C.border }}>
+              <Text style={{ fontSize: 10 }}>♫</Text>
+              <Text style={{ fontSize: 10, color: C.textDim, fontWeight: '500' }}>{lang === 'ko' ? mood.musicGenreKo : mood.musicGenre}</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, backgroundColor: C.bg, borderWidth: 1, borderColor: C.border }}>
+              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: mood.lightColor }} />
+              <Text style={{ fontSize: 10, color: C.textDim, fontWeight: '500' }}>{lang === 'ko' ? mood.lightLabelKo : mood.lightLabel}</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, backgroundColor: C.bg, borderWidth: 1, borderColor: C.border }}>
+              <Text style={{ fontSize: 10 }}>🎬</Text>
+              <Text style={{ fontSize: 10, color: C.textDim, fontWeight: '500' }} numberOfLines={1}>{lang === 'ko' ? mood.movieKo : mood.movieEn}</Text>
+            </View>
+          </View>
+          <Text style={{ position: 'absolute', bottom: 6, right: 10, fontSize: 14, color: C.textDim, opacity: 0.5 }}>›</Text>
+        </View>
+      </ScrollView>
+
+      {/* 페이지 점 */}
+      <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 4, paddingVertical: 3 }}>
+        {[0, 1].map(i => (
+          <View key={i} style={{
+            height: 3, borderRadius: 2,
+            width: page === i ? 14 : 3,
+            backgroundColor: page === i ? mood.lightColor : C.border,
+          }} />
+        ))}
       </View>
-    </TouchableOpacity>
+    </View>
   );
 }
 
@@ -3146,8 +3595,9 @@ function AddSpiritModal({ visible, onClose }: { visible: boolean; onClose: () =>
   const [abv, setAbv] = useState('');
   const [quantity, setQuantity] = useState<Qty>('full');
   const [rating, setRating] = useState<number>(0);
-  const [noteEn, setNoteEn] = useState('');
   const [noteKo, setNoteKo] = useState('');
+  const [autoTranslate, setAutoTranslate] = useState(false);
+  const [translating, setTranslating] = useState(false);
 
   // Flavor Profile Slider States
   const [sweet, setSweet] = useState(2);
@@ -3189,8 +3639,9 @@ function AddSpiritModal({ visible, onClose }: { visible: boolean; onClose: () =>
     setAbv('');
     setQuantity('full');
     setRating(0);
-    setNoteEn('');
     setNoteKo('');
+    setAutoTranslate(false);
+    setTranslating(false);
     setSweet(2); setSour(1); setBitter(2); setBody(3); setAroma(3);
 
     const loadIngredients = async () => {
@@ -3267,7 +3718,7 @@ function AddSpiritModal({ visible, onClose }: { visible: boolean; onClose: () =>
     setAroma(defProfile.aroma);
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (!selectedApiName) {
       Alert.alert(lang === 'ko' ? '오류' : 'Error', lang === 'ko' ? '주류 아카이브에서 주류를 골라주세요.' : 'Please select a spirit from the archive.');
       return;
@@ -3303,11 +3754,27 @@ function AddSpiritModal({ visible, onClose }: { visible: boolean; onClose: () =>
       myRating: rating > 0 ? rating : undefined,
       purchaseDate: new Date().toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'en-US', { year: 'numeric', month: '2-digit', day: '2-digit' }),
       openedDate: new Date().toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'en-US', { year: 'numeric', month: '2-digit', day: '2-digit' }),
-      myNote: (noteEn.trim() || noteKo.trim()) ? {
-        en: noteEn.trim() || noteKo.trim(),
-        ko: noteKo.trim() || noteEn.trim(),
-      } : undefined,
+      myNote: undefined,
     };
+
+    if (noteKo.trim()) {
+      let enText = noteKo.trim();
+      if (autoTranslate) {
+        try {
+          setTranslating(true);
+          const res = await fetch(
+            `https://api.mymemory.translated.net/get?q=${encodeURIComponent(noteKo.trim())}&langpair=ko|en`
+          );
+          const json = await res.json();
+          if (json?.responseData?.translatedText) enText = json.responseData.translatedText;
+        } catch {
+          // translation failed, fall back to Korean text
+        } finally {
+          setTranslating(false);
+        }
+      }
+      newSpirit.myNote = { ko: noteKo.trim(), en: enText };
+    }
 
     addInventoryItem(newSpirit);
     onClose();
@@ -3507,29 +3974,39 @@ function AddSpiritModal({ visible, onClose }: { visible: boolean; onClose: () =>
                   </View>
 
                   {/* Personal Tasting Notes */}
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: C.textDim, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
-                    {lang === 'ko' ? '시음 노트 (한글)' : 'TASTING NOTES (KOREAN)'}
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                    <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: C.textDim, textTransform: 'uppercase', letterSpacing: 1 }}>
+                      {lang === 'ko' ? '시음 노트' : 'TASTING NOTES'}
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => setAutoTranslate(v => !v)}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}
+                    >
+                      <Text style={{ fontSize: 10, color: autoTranslate ? C.primary : C.textDim, fontWeight: '600' }}>
+                        {lang === 'ko' ? '자동 번역' : 'Auto translate'}
+                      </Text>
+                      <View style={{
+                        width: 32, height: 18, borderRadius: 9,
+                        backgroundColor: autoTranslate ? C.primary : C.border,
+                        justifyContent: 'center',
+                        paddingHorizontal: 2,
+                      }}>
+                        <View style={{
+                          width: 14, height: 14, borderRadius: 7, backgroundColor: '#fff',
+                          alignSelf: autoTranslate ? 'flex-end' : 'flex-start',
+                        }} />
+                      </View>
+                    </TouchableOpacity>
+                  </View>
                   <TextInput
-                    style={{ backgroundColor: C.bg, color: C.text, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12, borderWidth: 1, borderColor: C.border, fontSize: 13, minHeight: 60, marginBottom: 12 }}
-                    placeholder={lang === 'ko' ? '맛에 대한 느낌을 한글로 적어보세요' : 'Tasting notes in Korean'}
+                    style={{ backgroundColor: C.bg, color: C.text, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12, borderWidth: 1, borderColor: C.border, fontSize: 13, minHeight: 60, marginBottom: 20 }}
+                    placeholder={lang === 'ko' ? '맛에 대한 느낌을 적어보세요' : 'Enter tasting notes'}
                     placeholderTextColor={C.textDim}
                     multiline
                     value={noteKo}
                     onChangeText={setNoteKo}
                   />
 
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: C.textDim, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
-                    {lang === 'ko' ? '시음 노트 (영문 - 선택)' : 'TASTING NOTES (ENGLISH - OPTIONAL)'}
-                  </Text>
-                  <TextInput
-                    style={{ backgroundColor: C.bg, color: C.text, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12, borderWidth: 1, borderColor: C.border, fontSize: 13, minHeight: 60, marginBottom: 20 }}
-                    placeholder="Notes in English"
-                    placeholderTextColor={C.textDim}
-                    multiline
-                    value={noteEn}
-                    onChangeText={setNoteEn}
-                  />
 
                   {/* Custom Taste sliders */}
                   <Text style={{ fontSize: 11, fontWeight: '700', color: C.textDim, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 }}>
@@ -3561,13 +4038,17 @@ function AddSpiritModal({ visible, onClose }: { visible: boolean; onClose: () =>
                   {/* Add Button */}
                   <TouchableOpacity
                     onPress={handleConfirm}
+                    disabled={translating}
                     style={{
-                      backgroundColor: C.text, paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginTop: 28,
+                      backgroundColor: translating ? C.textDim : C.text,
+                      paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginTop: 28,
                       shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 6, elevation: 3,
                     }}
                   >
                     <Text style={{ color: C.bg, fontSize: 15, fontWeight: '800' }}>
-                      {lang === 'ko' ? '진열장에 술 들이기' : 'Add Bottle to Cabinet'}
+                      {translating
+                        ? (lang === 'ko' ? '번역 중...' : 'Translating...')
+                        : (lang === 'ko' ? '진열장에 술 들이기' : 'Add Bottle to Cabinet')}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -3920,9 +4401,8 @@ function BarCustomizePanel({ visible, onClose }: { visible: boolean; onClose: ()
 function HomeScreen() {
   const {
     lang, theme, toggleTheme, setHomeCabH, setHomeCabTop,
-    barModeVisible, setBarModeVisible, bgmPlaying, bgmMoodIdx,
     inventoryItems, shelf0Ids, shelf1Ids,
-    barNeonColor, barWallThemeId, removeInventoryItem,
+    barNeonColor, removeInventoryItem,
   } = useAppStore();
   const styles = useStyles();
   const t      = TEXTS[lang];
@@ -3930,12 +4410,14 @@ function HomeScreen() {
   const [focusedItemId, setFocusedItemId] = useState<string | null>(null);
   const [cabH,        setCabH]        = useState(0);
   const [draggingId,  setDraggingId]  = useState<string | null>(null);
-  const [headerH,     setHeaderH]     = useState(0);
-  const [atmosphereH, setAtmosphereH] = useState(0);
   const [addModalVisible,     setAddModalVisible]     = useState(false);
   const [customizeVisible,    setCustomizeVisible]    = useState(false);
   const [shelf0Page, setShelf0Page] = useState(0);
   const [shelf1Page, setShelf1Page] = useState(0);
+  const trashVisibleAnim  = useRef(new Animated.Value(0)).current;
+  const trashActiveAnim   = useRef(new Animated.Value(0)).current;
+  const isNearTrashRef    = useRef(false);
+  const shelfPlanksRef    = useRef<number[]>([]);
 
   const focusedItem = useMemo(
     () => inventoryItems.find(it => it.id === focusedItemId) ?? null,
@@ -3945,13 +4427,10 @@ function HomeScreen() {
   const cabAreaRef  = useRef<View>(null);
   const panelAnim   = useRef(new Animated.Value(PANEL_H)).current;
   const shelfPlanks = useMemo(() => SHELF_FRACS.map(f => Math.round(cabH * f)), [cabH]);
+  shelfPlanksRef.current = shelfPlanks;
   const hour        = new Date().getHours();
-  const mood        = getMoodByHour(hour);
-  const track       = BGM_TRACKS[bgmMoodIdx];
   const C           = useColors();
   const isDark      = useIsDark();
-  const wallTheme   = BAR_WALL_THEMES.find(t => t.id === barWallThemeId) ?? BAR_WALL_THEMES[0];
-  const wallBg      = isDark ? wallTheme.darkBg : wallTheme.lightBg;
 
   const shelf0 = useMemo(
     () => shelf0Ids.map(id => inventoryItems.find(it => it.id === id)).filter((it): it is InventoryItem => it != null),
@@ -3982,13 +4461,60 @@ function HomeScreen() {
       .start(() => setFocusedItemId(null));
   }, [panelAnim]);
 
-  const onDragStart = useCallback((id: string) => setDraggingId(id), []);
+  const onDragStart = useCallback((id: string) => {
+    setDraggingId(id);
+    isNearTrashRef.current = false;
+    trashVisibleAnim.setValue(0);
+    trashActiveAnim.setValue(0);
+  }, [trashVisibleAnim, trashActiveAnim]);
+
+  const isTrashDrop = useCallback((absX: number, absY: number): boolean => {
+    const { homeCabTop } = useAppStore.getState();
+    const planks = shelfPlanksRef.current;
+    if (!planks.length) return false;
+    return absY > homeCabTop + planks[1] + 24 && Math.abs(absX - SCREEN_W / 2) < 90;
+  }, []);
+
+  const onDragMove = useCallback((_id: string, absX: number, absY: number) => {
+    const { homeCabTop } = useAppStore.getState();
+    const planks = shelfPlanksRef.current;
+    if (!planks.length) return;
+    const tableThreshold = homeCabTop + planks[1] + 24;
+    const isNear = absY > tableThreshold;
+    if (isNear !== isNearTrashRef.current) {
+      isNearTrashRef.current = isNear;
+      Animated.timing(trashVisibleAnim, {
+        toValue: isNear ? 1 : 0,
+        duration: 180,
+        useNativeDriver: true,
+      }).start();
+    }
+    if (isNear) {
+      const cx = SCREEN_W / 2;
+      const isActive = Math.abs(absX - cx) < 70;
+      Animated.timing(trashActiveAnim, {
+        toValue: isActive ? 1 : 0,
+        duration: 120,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [trashVisibleAnim, trashActiveAnim]);
 
   const onDragEnd = useCallback((id: string, releaseX: number, releaseY: number) => {
     setDraggingId(null);
+    Animated.timing(trashVisibleAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start();
+    Animated.timing(trashActiveAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start();
+    isNearTrashRef.current = false;
+
     if (releaseX === 0 && releaseY === 0) return;
 
     const { shelf0Ids: s0, shelf1Ids: s1, setShelf0Ids: setS0, setShelf1Ids: setS1, homeCabTop } = useAppStore.getState();
+
+    if (isTrashDrop(releaseX, releaseY)) {
+      setS0(s0.filter(x => x !== id));
+      setS1(s1.filter(x => x !== id));
+      return;
+    }
 
     const shelf0Center = homeCabTop + shelfPlanks[0] - BOTTLE_H / 2;
     const shelf1Center = homeCabTop + shelfPlanks[1] - BOTTLE_H / 2;
@@ -4027,11 +4553,11 @@ function HomeScreen() {
         setS0(nextTarget);
       }
     }
-  }, [shelfPlanks, shelf0Page, shelf1Page]);
+  }, [shelfPlanks, shelf0Page, shelf1Page, trashVisibleAnim, trashActiveAnim, isTrashDrop]);
 
   return (
     <View style={styles.home}>
-      <SafeAreaView edges={['top']} style={styles.homeHeaderSafe} onLayout={(e) => setHeaderH(e.nativeEvent.layout.height)}>
+      <SafeAreaView edges={['top']} style={styles.homeHeaderSafe}>
         <View style={styles.homeHeader}>
           <View>
             <Text style={styles.homeGreeting}>{t.greeting(hour)}</Text>
@@ -4047,59 +4573,11 @@ function HomeScreen() {
             </TouchableOpacity>
           </View>
         </View>
-        <Text style={styles.homeCount}>{t.barCount(inventoryItems.length)}</Text>
+        <Text style={styles.homeCount}>{t.barCount(shelf0Ids.length + shelf1Ids.length)}</Text>
       </SafeAreaView>
 
       {/* AtmosphereCard — 상단 바 밖, 항상 표시 */}
-      <View onLayout={(e) => setAtmosphereH(e.nativeEvent.layout.height)}>
-        <Text style={styles.homeTap}>{t.tapHint}</Text>
-        <AtmosphereCard hour={hour} lang={lang} isActive={barModeVisible} onBarMode={() => setBarModeVisible(!barModeVisible)} />
-      </View>
-
-      {/* Dropdown panel — absolutely positioned over cabinet, does not affect layout */}
-      {barModeVisible && focusedItem == null && (headerH + atmosphereH) > 0 && (
-        <View style={{
-          position: 'absolute', top: headerH + atmosphereH, left: 22, right: 22, zIndex: 20,
-          backgroundColor: wallBg,
-          borderWidth: 1, borderTopWidth: 0,
-          borderColor: `${mood.lightColor}55`,
-          borderBottomLeftRadius: 12, borderBottomRightRadius: 12,
-          paddingHorizontal: 16, paddingTop: 14, paddingBottom: 16,
-        }}>
-          {/* Large bottle image with glow */}
-          <View style={{ alignItems: 'center', marginBottom: 12 }}>
-            <View style={{ width: 120, height: 160, alignItems: 'center', justifyContent: 'center' }}>
-              <View style={{ position: 'absolute', width: 100, height: 100, borderRadius: 50, backgroundColor: `${mood.lightColor}18` }} />
-              <ExpoImage source={{ uri: mood.cocktailImg }} style={{ width: 110, height: 150 }} contentFit="contain" />
-            </View>
-            <NeonText text="On The Rock" color={mood.lightColor} size={18} script />
-            <Text style={{ fontSize: 11, color: C.textDim, marginTop: 3 }}>
-              {lang === 'ko' ? mood.timeLabelKo : mood.timeLabel}
-            </Text>
-          </View>
-          <View style={{ height: 1, backgroundColor: `${mood.lightColor}22`, marginBottom: 12 }} />
-          <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-            <View style={{ flexDirection:'row', alignItems:'center', gap:5, paddingHorizontal:10, paddingVertical:5, borderRadius:14, backgroundColor:`${mood.lightColor}10`, borderWidth:1, borderColor:`${mood.lightColor}28` }}>
-              <Text style={{ fontSize:12, color: bgmPlaying ? mood.lightColor : C.textDim }}>♫</Text>
-              <Text style={{ fontSize:11, color:C.textDim, fontWeight:'500' }}>
-                {bgmPlaying ? track.label : (lang === 'ko' ? mood.musicGenreKo : mood.musicGenre)}
-              </Text>
-            </View>
-            <View style={{ flexDirection:'row', alignItems:'center', gap:5, paddingHorizontal:10, paddingVertical:5, borderRadius:14, backgroundColor:`${mood.lightColor}10`, borderWidth:1, borderColor:`${mood.lightColor}28` }}>
-              <View style={{ width:7, height:7, borderRadius:4, backgroundColor:mood.lightColor }} />
-              <Text style={{ fontSize:11, color:C.textDim, fontWeight:'500' }}>
-                {lang === 'ko' ? mood.lightLabelKo : mood.lightLabel}
-              </Text>
-            </View>
-          </View>
-          <View style={{ flexDirection:'row', alignItems:'center', gap:6 }}>
-            <Text style={{ fontSize:12, color:C.textDim }}>🎬</Text>
-            <Text style={{ fontSize:12, color:C.textDim, fontWeight:'500' }}>
-              {lang === 'ko' ? mood.movieKo : mood.movieEn}
-            </Text>
-          </View>
-        </View>
-      )}
+      <AtmosphereCard hour={hour} lang={lang} />
 
       <View ref={cabAreaRef} style={styles.cabinetArea} onLayout={onCabLayout}>
         <BarWall />
@@ -4137,6 +4615,8 @@ function HomeScreen() {
                 draggingId={draggingId}
                 onDragStart={onDragStart}
                 onDragEnd={onDragEnd}
+                onDragMove={onDragMove}
+                isTrashDrop={isTrashDrop}
                 onPageChange={setShelf0Page}
               />
               <ShelfRow
@@ -4147,6 +4627,8 @@ function HomeScreen() {
                 draggingId={draggingId}
                 onDragStart={onDragStart}
                 onDragEnd={onDragEnd}
+                onDragMove={onDragMove}
+                isTrashDrop={isTrashDrop}
                 onPageChange={setShelf1Page}
               />
             </View>
@@ -4158,6 +4640,46 @@ function HomeScreen() {
 
             <CounterDecorations />
             <BarCounterDecor />
+
+            {/* ── Trash drop zone (visible when dragging near the table) ── */}
+            <Animated.View
+              pointerEvents="none"
+              style={{
+                position: 'absolute',
+                bottom: 20,
+                left: 0, right: 0,
+                alignItems: 'center',
+                opacity: trashVisibleAnim,
+                transform: [{ scale: trashActiveAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.18] }) }],
+              }}
+            >
+              <Animated.View style={{
+                width: 64, height: 64, borderRadius: 32,
+                alignItems: 'center', justifyContent: 'center',
+                backgroundColor: trashActiveAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: ['rgba(239,68,68,0.18)', 'rgba(239,68,68,0.50)'],
+                }),
+                borderWidth: 2,
+                borderColor: trashActiveAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: ['rgba(239,68,68,0.45)', 'rgba(239,68,68,0.95)'],
+                }),
+              }}>
+                <Text style={{ fontSize: 26, fontWeight: '700', color: '#EF4444' }}>✕</Text>
+              </Animated.View>
+              <Animated.Text style={{
+                marginTop: 5,
+                fontSize: 11,
+                fontWeight: '600',
+                color: trashActiveAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: ['rgba(239,68,68,0.7)', 'rgba(239,68,68,1)'],
+                }),
+              }}>
+                {lang === 'ko' ? '진열장에서 치우기' : 'Remove from shelf'}
+              </Animated.Text>
+            </Animated.View>
           </>
         )}
       </View>
@@ -4418,6 +4940,38 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
   const { selections, addPart, removeIngredient, iceCount, setIceCount, iceType, setIceType, glassType, setGlassType } = useMixStore();
   const [stage,     setStage]     = useState<SimStage>('select');
 
+  // ── Mix zone theme variables ──
+  const simBg     = isDark ? '#0b0a17' : '#e6e0d4';
+  const floorBg   = isDark ? '#0f0d1a' : '#dbd4c6';
+  const counterBg = isDark ? '#18100a' : '#c8b896';
+  const counterTp = isDark ? '#2e2010' : '#b8a882';
+  const woodLn    = isDark ? '#5a3e1e' : '#a09060';
+  const panelBg   = isDark ? 'rgba(10,8,22,0.85)'     : 'rgba(242,238,230,0.93)';
+  const panelBd   = isDark ? 'rgba(255,255,255,0.08)'  : 'rgba(0,0,0,0.12)';
+  const txtHi     = isDark ? '#ffffff'                 : '#1a1209';
+  const txtMid    = isDark ? 'rgba(255,255,255,0.65)'  : 'rgba(0,0,0,0.60)';
+  const txtLo     = isDark ? 'rgba(255,255,255,0.38)'  : 'rgba(0,0,0,0.32)';
+  const txtFaint  = isDark ? 'rgba(255,255,255,0.30)'  : 'rgba(0,0,0,0.25)';
+  const btnBg     = isDark ? 'rgba(255,255,255,0.11)'  : 'rgba(0,0,0,0.07)';
+  const btnBd     = isDark ? 'rgba(255,255,255,0.26)'  : 'rgba(0,0,0,0.20)';
+  const progBg    = isDark ? 'rgba(255,255,255,0.10)'  : 'rgba(0,0,0,0.08)';
+  const stepActBd = isDark ? 'rgba(255,255,255,0.65)'  : 'rgba(0,0,0,0.55)';
+  const stepDnBd  = isDark ? 'rgba(255,255,255,0.36)'  : 'rgba(0,0,0,0.28)';
+  const stepInBd  = isDark ? 'rgba(255,255,255,0.14)'  : 'rgba(0,0,0,0.12)';
+  const stepActBg = isDark ? 'rgba(255,255,255,0.13)'  : 'rgba(0,0,0,0.08)';
+  const stepTxtH  = isDark ? 'rgba(255,255,255,0.82)'  : 'rgba(0,0,0,0.70)';
+  const stepTxtL  = isDark ? 'rgba(255,255,255,0.26)'  : 'rgba(0,0,0,0.22)';
+  const stepLnA   = isDark ? 'rgba(255,255,255,0.36)'  : 'rgba(0,0,0,0.28)';
+  const stepLnI   = isDark ? 'rgba(255,255,255,0.12)'  : 'rgba(0,0,0,0.10)';
+  const coachBg   = isDark ? 'rgba(15,13,26,0.85)'     : 'rgba(232,226,216,0.92)';
+  const coachBd   = isDark ? 'rgba(255,255,255,0.1)'   : 'rgba(0,0,0,0.10)';
+  const coachLbl  = isDark ? 'rgba(255,255,255,0.5)'   : 'rgba(0,0,0,0.45)';
+  const glassStr  = isDark ? 'rgba(255,255,255,0.22)'  : 'rgba(0,0,0,0.18)';
+  const glassTopS = isDark ? 'rgba(255,255,255,0.38)'  : 'rgba(0,0,0,0.28)';
+  const glassFl   = isDark ? 'rgba(255,255,255,0.022)' : 'rgba(0,0,0,0.01)';
+  const glassRef  = isDark ? 'rgba(255,255,255,0.07)'  : 'rgba(0,0,0,0.04)';
+  const dropHint  = isDark ? 'rgba(255,255,255,0.16)'  : 'rgba(0,0,0,0.14)';
+
   // ── Straw stirring ──
   const stirXAnim    = useRef(new Animated.Value(0)).current;
   const stirDistRef  = useRef(0);
@@ -4591,27 +5145,27 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
       {/* ══ STATIC SVG BACKGROUND ══ */}
       <Svg width={W} height={SIM_H} viewBox={`0 0 ${W} ${SIM_H}`}
         style={{ position: 'absolute', top: 0, left: 0 }}>
-        <SvgRect x={0} y={0} width={W} height={SIM_H} fill={isDark ? '#0b0a17' : '#141220'} />
+        <SvgRect x={0} y={0} width={W} height={SIM_H} fill={simBg} />
 
         {/* Shelf plank */}
         {showShelf && (
           <>
-            <SvgRect x={12} y={SHELF_Y} width={W-24} height={10} rx={2} fill="#2e2010" />
-            <Line x1={12} y1={SHELF_Y} x2={W-12} y2={SHELF_Y} stroke="#5a3e1e" strokeWidth={1} />
+            <SvgRect x={12} y={SHELF_Y} width={W-24} height={10} rx={2} fill={counterTp} />
+            <Line x1={12} y1={SHELF_Y} x2={W-12} y2={SHELF_Y} stroke={woodLn} strokeWidth={1} />
           </>
         )}
 
         {/* Working floor */}
         {showGlass && (
-          <SvgRect x={0} y={showShelf ? SHELF_Y+10 : 0} width={W} height={SIM_H} fill="#0f0d1a" />
+          <SvgRect x={0} y={showShelf ? SHELF_Y+10 : 0} width={W} height={SIM_H} fill={floorBg} />
         )}
 
         {/* Counter */}
         {showGlass && (
           <>
-            <SvgRect x={0} y={420} width={W} height={SIM_H-420} fill="#18100a" />
-            <SvgRect x={0} y={420} width={W} height={5} fill="#2e2010" />
-            <Line x1={0} y1={420} x2={W} y2={420} stroke="#5a3e1e" strokeWidth={2} />
+            <SvgRect x={0} y={420} width={W} height={SIM_H-420} fill={counterBg} />
+            <SvgRect x={0} y={420} width={W} height={5} fill={counterTp} />
+            <Line x1={0} y1={420} x2={W} y2={420} stroke={woodLn} strokeWidth={2} />
           </>
         )}
 
@@ -4756,24 +5310,24 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
           <>
             <Path
               d={`M ${CX-WT} ${GT} L ${CX+WT} ${GT} L ${CX+WB} ${GB} L ${CX-WB} ${GB} Z`}
-              fill="rgba(255,255,255,0.022)" stroke="rgba(255,255,255,0.22)" strokeWidth={1.5}
+              fill={glassFl} stroke={glassStr} strokeWidth={1.5}
             />
             {WB > 10 && (
               <Path
                 d={`M ${CX-WT+3} ${GT+5} L ${CX-WT+7} ${GT+5} L ${CX-WB+6} ${GB-22} L ${CX-WB+2} ${GB-22} Z`}
-                fill="rgba(255,255,255,0.07)"
+                fill={glassRef}
               />
             )}
             {glassType === 'martini' && (
               <>
                 <Line x1={CX} y1={GB} x2={CX} y2={GB+20}
-                  stroke="rgba(255,255,255,0.28)" strokeWidth={2.0} />
+                  stroke={glassStr} strokeWidth={2.0} />
                 <Line x1={CX-20} y1={GB+20} x2={CX+20} y2={GB+20}
-                  stroke="rgba(255,255,255,0.32)" strokeWidth={2.0} strokeLinecap="round" />
+                  stroke={glassStr} strokeWidth={2.0} strokeLinecap="round" />
               </>
             )}
             <Line x1={CX-WT} y1={GT} x2={CX+WT} y2={GT}
-              stroke="rgba(255,255,255,0.38)" strokeWidth={2.5} strokeLinecap="round" />
+              stroke={glassTopS} strokeWidth={2.5} strokeLinecap="round" />
           </>
         )}
 
@@ -4781,9 +5335,9 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
         {stage === 'pour' && totalParts === 0 && (
           <>
             <Line x1={CX} y1={GT-42} x2={CX} y2={GT-14}
-              stroke="rgba(255,255,255,0.16)" strokeWidth={1.5} strokeDasharray="4 3" />
+              stroke={dropHint} strokeWidth={1.5} strokeDasharray="4 3" />
             <Path d={`M ${CX-6} ${GT-15} L ${CX} ${GT-7} L ${CX+6} ${GT-15}`}
-              stroke="rgba(255,255,255,0.16)" strokeWidth={1.5} fill="none" strokeLinejoin="round" />
+              stroke={dropHint} strokeWidth={1.5} fill="none" strokeLinejoin="round" />
           </>
         )}
 
@@ -4834,11 +5388,11 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
       {stage === 'select' && (
         <View style={{ position: 'absolute', top: 8, left: 10, right: 10 }}>
           <View style={{
-            backgroundColor: 'rgba(10,8,22,0.82)', borderRadius: 16,
-            padding: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+            backgroundColor: panelBg, borderRadius: 16,
+            padding: 12, borderWidth: 1, borderColor: panelBd,
           }}>
             <Text style={{
-              color: 'rgba(255,255,255,0.65)', fontSize: 12, fontWeight: '600',
+              color: txtMid, fontSize: 12, fontWeight: '600',
               textAlign: 'center', marginBottom: 12, letterSpacing: 0.2,
             }}>
               {lang === 'ko' ? '사용할 잔을 골라주세요' : 'Choose your glass'}
@@ -4855,31 +5409,31 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
                       flex: 1, maxWidth: 84, alignItems: 'center', gap: 4,
                       paddingHorizontal: 6, paddingVertical: 8,
                       borderRadius: 12, borderWidth: 1.5,
-                      borderColor: on ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.12)',
-                      backgroundColor: on ? 'rgba(255,255,255,0.08)' : 'transparent',
+                      borderColor: on ? stepActBd : stepInBd,
+                      backgroundColor: on ? stepActBg : 'transparent',
                     }}
                   >
                     <Svg width={50} height={70} viewBox="0 0 50 74">
                       <Path
                         d={`M ${tCX-th.tWT} ${th.tGT} L ${tCX+th.tWT} ${th.tGT} L ${tCX+th.tWB} ${th.tGB} L ${tCX-th.tWB} ${th.tGB} Z`}
-                        fill={on ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.04)'}
-                        stroke={on ? 'rgba(255,255,255,0.60)' : 'rgba(255,255,255,0.26)'}
+                        fill={on ? stepActBg : 'transparent'}
+                        stroke={on ? stepActBd : stepDnBd}
                         strokeWidth={1.2}
                       />
                       {gt === 'martini' && (
                         <>
                           <Line x1={tCX} y1={th.tGB} x2={tCX} y2={th.tGB+7}
-                            stroke={on ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.18)'} strokeWidth={1.2} />
+                            stroke={on ? stepActBd : stepInBd} strokeWidth={1.2} />
                           <Line x1={tCX-9} y1={th.tGB+7} x2={tCX+9} y2={th.tGB+7}
-                            stroke={on ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.18)'}
+                            stroke={on ? stepActBd : stepInBd}
                             strokeWidth={1.2} strokeLinecap="round" />
                         </>
                       )}
                       <Line x1={tCX-th.tWT} y1={th.tGT} x2={tCX+th.tWT} y2={th.tGT}
-                        stroke={on ? 'rgba(255,255,255,0.82)' : 'rgba(255,255,255,0.36)'}
+                        stroke={on ? stepTxtH : stepDnBd}
                         strokeWidth={2} strokeLinecap="round" />
                     </Svg>
-                    <Text style={{ fontSize: 9, fontWeight: on ? '700' : '400', color: on ? '#fff' : 'rgba(255,255,255,0.42)' }}>
+                    <Text style={{ fontSize: 9, fontWeight: on ? '700' : '400', color: on ? txtHi : txtLo }}>
                       {lang === 'ko' ? sp.labelKo : sp.label}
                     </Text>
                   </TouchableOpacity>
@@ -4888,9 +5442,9 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
             </View>
             <TouchableOpacity
               onPress={() => setStage('prep')}
-              style={{ marginTop: 12, paddingVertical: 11, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.11)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.26)', alignItems: 'center' }}
+              style={{ marginTop: 12, paddingVertical: 11, borderRadius: 20, backgroundColor: btnBg, borderWidth: 1, borderColor: btnBd, alignItems: 'center' }}
             >
-              <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>{lang === 'ko' ? '다음 →' : 'Next →'}</Text>
+              <Text style={{ color: txtHi, fontSize: 13, fontWeight: '700' }}>{lang === 'ko' ? '다음 →' : 'Next →'}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -4900,11 +5454,11 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
       {stage === 'prep' && (
         <View style={{ position: 'absolute', top: 8, left: 10, right: 10 }}>
           <View style={{
-            backgroundColor: 'rgba(10,8,22,0.82)', borderRadius: 16,
-            padding: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+            backgroundColor: panelBg, borderRadius: 16,
+            padding: 12, borderWidth: 1, borderColor: panelBd,
           }}>
           <Text style={{
-            color: 'rgba(255,255,255,0.65)', fontSize: 12, fontWeight: '600',
+            color: txtMid, fontSize: 12, fontWeight: '600',
             textAlign: 'center', marginBottom: 10, letterSpacing: 0.2,
           }}>
             {lang === 'ko' ? '얼음 종류를 선택하세요' : 'Choose your ice type'}
@@ -4922,8 +5476,8 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
                     width: 70, alignItems: 'center', gap: 4,
                     paddingTop: 10, paddingBottom: 8, paddingHorizontal: 6,
                     borderRadius: 14, borderWidth: 1.5,
-                    borderColor: on ? 'rgba(200,238,255,0.80)' : 'rgba(255,255,255,0.12)',
-                    backgroundColor: on ? 'rgba(180,228,255,0.10)' : 'transparent',
+                    borderColor: on ? 'rgba(80,160,220,0.80)' : stepInBd,
+                    backgroundColor: on ? 'rgba(80,160,220,0.10)' : 'transparent',
                   }}
                 >
                   <Svg width={42} height={36} viewBox="0 0 42 36">
@@ -4995,7 +5549,7 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
                   </Svg>
                   <Text style={{
                     fontSize: 10, fontWeight: on ? '700' : '400',
-                    color: on ? 'rgba(200,238,255,0.96)' : 'rgba(255,255,255,0.42)',
+                    color: on ? (isDark ? 'rgba(160,220,255,0.96)' : '#2080c0') : txtLo,
                     textAlign: 'center',
                   }}>
                     {lang === 'ko' ? it.label : it.labelEn}
@@ -5010,21 +5564,21 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14, marginTop: 18 }}>
               <TouchableOpacity
                 onPress={() => setIceCount(c => Math.max(1, c - 1))}
-                style={{ width: 32, height: 32, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.28)', alignItems: 'center', justifyContent: 'center' }}
+                style={{ width: 32, height: 32, borderRadius: 16, borderWidth: 1, borderColor: btnBd, alignItems: 'center', justifyContent: 'center' }}
               >
-                <Text style={{ color: '#fff', fontSize: 18, lineHeight: 22 }}>−</Text>
+                <Text style={{ color: txtHi, fontSize: 18, lineHeight: 22 }}>−</Text>
               </TouchableOpacity>
               <View style={{ alignItems: 'center', gap: 2 }}>
-                <Text style={{ color: '#fff', fontSize: 20, fontWeight: '800', lineHeight: 24 }}>{iceCount}</Text>
-                <Text style={{ color: 'rgba(255,255,255,0.38)', fontSize: 9, fontWeight: '600' }}>
+                <Text style={{ color: txtHi, fontSize: 20, fontWeight: '800', lineHeight: 24 }}>{iceCount}</Text>
+                <Text style={{ color: txtLo, fontSize: 9, fontWeight: '600' }}>
                   {lang === 'ko' ? '개' : 'cubes'}
                 </Text>
               </View>
               <TouchableOpacity
                 onPress={() => setIceCount(c => Math.min(5, c + 1))}
-                style={{ width: 32, height: 32, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.28)', alignItems: 'center', justifyContent: 'center' }}
+                style={{ width: 32, height: 32, borderRadius: 16, borderWidth: 1, borderColor: btnBd, alignItems: 'center', justifyContent: 'center' }}
               >
-                <Text style={{ color: '#fff', fontSize: 18, lineHeight: 22 }}>+</Text>
+                <Text style={{ color: txtHi, fontSize: 18, lineHeight: 22 }}>+</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -5034,12 +5588,12 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
           {/* Nav */}
           <TouchableOpacity
             onPress={() => setStage('pour')}
-            style={{ marginTop: 26, marginHorizontal: 18, paddingVertical: 13, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.11)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.26)', alignItems: 'center' }}
+            style={{ marginTop: 26, marginHorizontal: 18, paddingVertical: 13, borderRadius: 22, backgroundColor: btnBg, borderWidth: 1, borderColor: btnBd, alignItems: 'center' }}
           >
-            <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700' }}>{lang === 'ko' ? '다음 →' : 'Next →'}</Text>
+            <Text style={{ color: txtHi, fontSize: 14, fontWeight: '700' }}>{lang === 'ko' ? '다음 →' : 'Next →'}</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => setStage('select')} style={{ marginTop: 10, alignItems: 'center', paddingVertical: 8 }}>
-            <Text style={{ color: 'rgba(255,255,255,0.30)', fontSize: 13 }}>← {lang === 'ko' ? '뒤로' : 'Back'}</Text>
+          <TouchableOpacity onPress={() => { setIceType('none'); setIceCount(3); setStage('select'); }} style={{ marginTop: 10, alignItems: 'center', paddingVertical: 8 }}>
+            <Text style={{ color: txtFaint, fontSize: 13 }}>← {lang === 'ko' ? '뒤로' : 'Back'}</Text>
           </TouchableOpacity>
           </View>
       )}
@@ -5055,7 +5609,7 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
             paddingHorizontal: 16, pointerEvents: 'box-none'
           }}>
             {selected.length === 0 ? (
-              <Text style={{ color: 'rgba(255,255,255,0.28)', fontSize: 11, fontWeight: '600', marginTop: 10 }}>
+              <Text style={{ color: txtFaint, fontSize: 11, fontWeight: '600', marginTop: 10 }}>
                 {lang === 'ko' ? '아래 목록에서 믹싱할 재료를 선택해주세요.' : 'Please select ingredients below.'}
               </Text>
             ) : (
@@ -5075,10 +5629,10 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
                       style={{ alignItems: 'center' }}
                     >
                       <BottleSvg ingredient={ing} isSelected={parts > 0} />
-                      <Text style={{ fontSize: 9, color: parts > 0 ? '#4cde80' : '#fff', fontWeight: 'bold', marginTop: 2 }}>
+                      <Text style={{ fontSize: 9, color: parts > 0 ? '#4cde80' : txtHi, fontWeight: 'bold', marginTop: 2 }}>
                         {parts > 0 ? `${parts} Parts` : '+ Pour'}
                       </Text>
-                      <Text style={{ fontSize: 8, color: 'rgba(255,255,255,0.45)', marginTop: 1, textAlign: 'center', width: 56 }} numberOfLines={1}>
+                      <Text style={{ fontSize: 8, color: txtLo, marginTop: 1, textAlign: 'center', width: 56 }} numberOfLines={1}>
                         {lang === 'ko' ? ing.nameKo : ing.name.split(' ')[0]}
                       </Text>
                     </TouchableOpacity>
@@ -5106,31 +5660,31 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
           {selected.length > 0 && (
             <View style={{
               position: 'absolute', bottom: 78, left: 24, right: 24,
-              backgroundColor: 'rgba(15,13,26,0.85)', padding: 10, borderRadius: 12,
-              borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', pointerEvents: 'none'
+              backgroundColor: coachBg, padding: 10, borderRadius: 12,
+              borderWidth: 1, borderColor: coachBd, pointerEvents: 'none'
             }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 }}>
-                <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10 }}>ABV</Text>
-                <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>
+                <Text style={{ color: coachLbl, fontSize: 10 }}>ABV</Text>
+                <Text style={{ color: txtHi, fontSize: 10, fontWeight: '700' }}>
                   {Math.round(currentAbv)}%
                 </Text>
               </View>
-              <View style={{ height: 4, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 2, marginBottom: 8, overflow: 'hidden' }}>
+              <View style={{ height: 4, backgroundColor: progBg, borderRadius: 2, marginBottom: 8, overflow: 'hidden' }}>
                 <View style={{
                   width: `${Math.min(100, (currentAbv / 40) * 100)}%`, height: '100%',
                   backgroundColor: (currentAbv >= envelope.minAbv && currentAbv <= envelope.maxAbv) ? '#4cde80' : '#ffb830'
                 }} />
               </View>
-              
+
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 }}>
-                <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10 }}>
+                <Text style={{ color: coachLbl, fontSize: 10 }}>
                   {lang === 'ko' ? '단맛/산미 비율' : 'Sweet/Sour Balance'}
                 </Text>
-                <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>
+                <Text style={{ color: txtHi, fontSize: 10, fontWeight: '700' }}>
                   {balanceText}
                 </Text>
               </View>
-              <View style={{ height: 4, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 2, overflow: 'hidden' }}>
+              <View style={{ height: 4, backgroundColor: progBg, borderRadius: 2, overflow: 'hidden' }}>
                 <View style={{
                   width: `${Math.min(100, (sugarAcidRatio / 3) * 100)}%`, height: '100%',
                   backgroundColor: (sugarAcidRatio >= 0.8 && sugarAcidRatio <= 1.5) ? '#4cde80' : '#ff6b6b'
@@ -5148,7 +5702,7 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
             flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
           }}>
             <TouchableOpacity onPress={() => setStage('prep')} style={{ paddingVertical: 10, paddingHorizontal: 14 }}>
-              <Text style={{ color: 'rgba(255,255,255,0.32)', fontSize: 13 }}>
+              <Text style={{ color: txtFaint, fontSize: 13 }}>
                 ← {lang === 'ko' ? '뒤로' : 'Back'}
               </Text>
             </TouchableOpacity>
@@ -5156,13 +5710,13 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
               onPress={() => { if (totalParts >= envelope.minParts) setStage('mix'); }}
               style={{
                 paddingHorizontal: 22, paddingVertical: 11, borderRadius: 22,
-                backgroundColor: totalParts >= envelope.minParts ? 'rgba(255,255,255,0.11)' : 'rgba(255,255,255,0.04)',
+                backgroundColor: totalParts >= envelope.minParts ? btnBg : 'transparent',
                 borderWidth: 1,
-                borderColor: totalParts >= envelope.minParts ? 'rgba(255,255,255,0.26)' : 'rgba(255,255,255,0.10)',
+                borderColor: totalParts >= envelope.minParts ? btnBd : stepInBd,
                 opacity: totalParts >= envelope.minParts ? 1 : 0.45,
               }}
             >
-              <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700' }}>
+              <Text style={{ color: txtHi, fontSize: 14, fontWeight: '700' }}>
                 {lang === 'ko' ? '믹스 단계로 →' : 'To Mix →'}
               </Text>
             </TouchableOpacity>
@@ -5178,7 +5732,7 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
           <Text style={{
             position: 'absolute', top: GT - 88, left: 0, right: 0,
             textAlign: 'center', fontSize: 14, fontWeight: '700',
-            color: stirProg >= 100 ? '#a8f0c0' : 'rgba(255,255,255,0.65)',
+            color: stirProg >= 100 ? '#4cde80' : txtMid,
           }}>
             {stirProg >= 100
               ? (lang === 'ko' ? '완성됐어요! 🍹' : 'Ready to serve!')
@@ -5189,7 +5743,7 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
           <View style={{
             position: 'absolute', top: GT - 66, left: 40, right: 40,
             height: 4, borderRadius: 2,
-            backgroundColor: 'rgba(255,255,255,0.10)',
+            backgroundColor: progBg,
             overflow: 'hidden',
           }}>
             <View style={{
@@ -5201,7 +5755,7 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
           {/* 하단 뒤로 / 서브 버튼 */}
           <View style={{ position: 'absolute', bottom: 22, left: 20, right: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <TouchableOpacity onPress={() => setStage('pour')} style={{ paddingVertical: 10, paddingHorizontal: 14 }}>
-              <Text style={{ color: 'rgba(255,255,255,0.32)', fontSize: 13 }}>
+              <Text style={{ color: txtFaint, fontSize: 13 }}>
                 ← {lang === 'ko' ? '뒤로' : 'Back'}
               </Text>
             </TouchableOpacity>
@@ -5229,13 +5783,13 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
           <Text style={{
             position: 'absolute', top: GT - 88, left: 0, right: 0,
             textAlign: 'center', fontSize: 17, fontWeight: '900',
-            color: 'rgba(255,255,255,0.90)', letterSpacing: -0.3,
+            color: txtHi, letterSpacing: -0.3,
           }}>
             {lang === 'ko' ? '완성된 칵테일' : 'Your Cocktail'}
           </Text>
           <Text style={{
             position: 'absolute', top: GT - 62, left: 0, right: 0,
-            textAlign: 'center', fontSize: 11, color: 'rgba(255,255,255,0.38)', fontWeight: '500',
+            textAlign: 'center', fontSize: 11, color: txtLo, fontWeight: '500',
           }}>
             {lang === 'ko' ? gs.labelKo : gs.label}
             {' · '}{lang === 'ko' ? `재료 ${selected.length}가지` : `${selected.length} ingredient${selected.length !== 1 ? 's' : ''}`}
@@ -5271,10 +5825,10 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
               onPress={handleReset}
               style={{
                 flex: 1, paddingVertical: 13, borderRadius: 20,
-                borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', alignItems: 'center',
+                borderWidth: 1, borderColor: stepInBd, alignItems: 'center',
               }}
             >
-              <Text style={{ color: 'rgba(255,255,255,0.48)', fontSize: 13, fontWeight: '600' }}>
+              <Text style={{ color: txtLo, fontSize: 13, fontWeight: '600' }}>
                 {lang === 'ko' ? '다시 만들기' : 'Make Again'}
               </Text>
             </TouchableOpacity>
@@ -5284,11 +5838,11 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
               }}
               style={{
                 flex: 1, paddingVertical: 13, borderRadius: 20,
-                backgroundColor: 'rgba(255,255,255,0.10)',
-                borderWidth: 1, borderColor: 'rgba(255,255,255,0.26)', alignItems: 'center',
+                backgroundColor: btnBg,
+                borderWidth: 1, borderColor: btnBd, alignItems: 'center',
               }}
             >
-              <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>
+              <Text style={{ color: txtHi, fontSize: 13, fontWeight: '700' }}>
                 {lang === 'ko' ? '레시피 저장' : 'Save Recipe'}
               </Text>
             </TouchableOpacity>
@@ -5307,21 +5861,19 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
             {i > 0 && (
               <View style={{
                 width: 20, height: 1,
-                backgroundColor: i <= stageIdx ? 'rgba(255,255,255,0.36)' : 'rgba(255,255,255,0.12)',
+                backgroundColor: i <= stageIdx ? stepLnA : stepLnI,
               }} />
             )}
             <View style={{
               width: 22, height: 22, borderRadius: 11,
-              backgroundColor: i === stageIdx ? 'rgba(255,255,255,0.13)' : 'transparent',
+              backgroundColor: i === stageIdx ? stepActBg : 'transparent',
               borderWidth: 1,
-              borderColor: i === stageIdx
-                ? 'rgba(255,255,255,0.65)'
-                : i < stageIdx ? 'rgba(255,255,255,0.36)' : 'rgba(255,255,255,0.14)',
+              borderColor: i === stageIdx ? stepActBd : i < stageIdx ? stepDnBd : stepInBd,
               alignItems: 'center', justifyContent: 'center',
             }}>
               <Text style={{
                 fontSize: 8, fontWeight: '700',
-                color: i <= stageIdx ? 'rgba(255,255,255,0.82)' : 'rgba(255,255,255,0.26)',
+                color: i <= stageIdx ? stepTxtH : stepTxtL,
               }}>
                 {i < stageIdx ? '✓' : `${i + 1}`}
               </Text>
@@ -5330,12 +5882,89 @@ function MixSimulator({ selected, lang, onReset, onStageChange, onSaveRecipe }: 
         ))}
       </View>
       <View style={{ position: 'absolute', top: 36, left: 0, right: 0, alignItems: 'center', pointerEvents: 'none' }}>
-        <Text style={{ fontSize: 9, color: 'rgba(255,255,255,0.38)', fontWeight: '600', letterSpacing: 1.4 }}>
+        <Text style={{ fontSize: 9, color: txtLo, fontWeight: '600', letterSpacing: 1.4 }}>
           {stageLabels[stageIdx].toUpperCase()}
         </Text>
       </View>
     </View>
   );
+}
+
+// ── 재료 색상 매핑 (RecipeSimAnimation 전용) ─────────────────────
+function getIngredientColor(name: string, fallback: string): string {
+  const n = name.toLowerCase();
+  if (/bourbon|whiskey|whisky|rye whiskey/.test(n)) return '#d07818';
+  if (/scotch/.test(n))          return '#c89020';
+  if (/rye/.test(n))             return '#c87010';
+  if (/\bgin\b/.test(n))         return '#bce0f0';
+  if (/vodka/.test(n))           return '#ddeeff';
+  if (/\brum\b/.test(n))         return '#ebdca5';
+  if (/tequila/.test(n))         return '#d4e8a0';
+  if (/mezcal/.test(n))          return '#c8dca0';
+  if (/campari/.test(n))         return '#c84820';
+  if (/aperol/.test(n))          return '#e87030';
+  if (/kahlua|coffee liqueur/.test(n)) return '#3a1808';
+  if (/baileys|cream liqueur/.test(n)) return '#d4c0a0';
+  if (/triple sec|cointreau|cura[cç]ao/.test(n)) return '#e8a020';
+  if (/amaretto/.test(n))        return '#b86820';
+  if (/midori/.test(n))          return '#60b830';
+  if (/blue cura[cç]ao/.test(n)) return '#2060c0';
+  if (/sweet vermouth/.test(n))  return '#8b1a4a';
+  if (/dry vermouth/.test(n))    return '#c8d890';
+  if (/vermouth/.test(n))        return '#a0b060';
+  if (/prosecco|champagne|sparkling wine/.test(n)) return '#f0d878';
+  if (/\bbeer\b/.test(n))        return '#e0a820';
+  if (/espresso|coffee/.test(n)) return '#2a1004';
+  if (/lemon juice|lemon/.test(n)) return '#f0c040';
+  if (/lime juice|lime/.test(n)) return '#5cb85c';
+  if (/orange juice/.test(n))    return '#e88820';
+  if (/pineapple/.test(n))       return '#f0d840';
+  if (/cranberry/.test(n))       return '#c02040';
+  if (/grapefruit/.test(n))      return '#e85050';
+  if (/tomato/.test(n))          return '#d03020';
+  if (/grenadine/.test(n))       return '#d02848';
+  if (/simple syrup|sugar syrup/.test(n)) return '#f0e8c8';
+  if (/honey/.test(n))           return '#f0b820';
+  if (/\bsyrup\b/.test(n))       return '#f0e0b0';
+  if (/cola|coke/.test(n))       return '#3a1808';
+  if (/ginger beer|ginger ale/.test(n)) return '#e0d080';
+  if (/soda water|club soda|sparkling water/.test(n)) return '#c8e8f4';
+  if (/tonic water|tonic/.test(n)) return '#d0e8f0';
+  if (/water/.test(n))           return '#d8f0f8';
+  if (/cream|milk/.test(n))      return '#f8f0e0';
+  if (/egg white/.test(n))       return '#f4f0ec';
+  if (/mint/.test(n))            return '#4caf50';
+  return fallback;
+}
+
+function parseRecipeIngredients(
+  ingredients: string[]
+): Array<{ name: string; volume: number }> {
+  return ingredients.map(raw => {
+    const mlM  = raw.match(/(\d+(?:\.\d+)?)\s*ml/i);
+    const ozM  = raw.match(/(\d+(?:\.\d+)?)\s*oz/i);
+    const clM  = raw.match(/(\d+(?:\.\d+)?)\s*cl/i);
+    const dashM = raw.match(/(\d+)\s*dash/i);
+    const splashM = raw.match(/\bsplash\b/i);
+
+    let volume = 0;
+    if (mlM)     volume = parseFloat(mlM[1]);
+    else if (ozM)  volume = Math.round(parseFloat(ozM[1]) * 30);
+    else if (clM)  volume = parseFloat(clM[1]) * 10;
+    else if (dashM) volume = parseInt(dashM[1]) * 2;
+    else if (splashM) volume = 10;
+
+    const name = raw
+      .replace(/\d+(?:\.\d+)?\s*(ml|oz|cl)\b/gi, '')
+      .replace(/\(\s*\d+\s*(ml|oz|cl)[^)]*\)/gi, '')
+      .replace(/\(.*?\)/g, '')
+      .replace(/\b\d+\b/g, '')
+      .replace(/\b(fresh|cooled?|chilled|frozen|optional)\b/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    return { name, volume };
+  }).filter(x => x.volume > 0);
 }
 
 // 토글 열리는 즉시 자동재생·GIF처럼 반복
@@ -5370,19 +5999,55 @@ function RecipeSimAnimation({ recipe, lang }: { recipe: Recipe; lang: 'en' | 'ko
 
   // 페이즈 타임라인 (0–1):
   //  0.0–0.10 : 빈 잔
-  //  0.10–0.45: 액체 채워짐
+  //  0.10–0.45: 재료별 순서대로 채워짐 (층 쌓기)
   //  0.45–0.60: 얼음 등장
   //  0.60–0.86: 스트로우 저음
   //  0.86–1.00: 완성
-
-  const liquidH   = liquidProg.interpolate({ inputRange: [0.10, 0.45], outputRange: [0, liqH], extrapolate: 'clamp' });
   const iceOpacity= liquidProg.interpolate({ inputRange: [0.44, 0.60], outputRange: [0, 1],   extrapolate: 'clamp' });
   const strawVis  = liquidProg.interpolate({ inputRange: [0.58, 0.65, 0.87, 0.93], outputRange: [0, 1, 1, 0], extrapolate: 'clamp' });
   const bgOpacity = liquidProg.interpolate({ inputRange: [0.3,  0.5],  outputRange: [0, 0.22], extrapolate: 'clamp' });
   const strawX    = strawOsc.interpolate({ inputRange: [-1, 1], outputRange: [-12, 12] });
 
+  // 재료별 층 계산
+  const layers = useMemo(() => {
+    const parsed = parseRecipeIngredients(recipe.ingredients);
+    const total  = parsed.reduce((s, x) => s + x.volume, 0);
+    if (total === 0) return [];
+    let cum = 0;
+    return parsed.map(p => {
+      const frac  = p.volume / total;
+      const start = cum;
+      cum += frac;
+      return { color: getIngredientColor(p.name, recipe.color), frac, start, end: cum };
+    });
+  }, [recipe.ingredients, recipe.color]);
+
+  // 각 층의 채우기 애니메이션 (순서대로 아래서 위로)
+  // 층 i는 liquidProg = [0.10 + 0.35*start, 0.10 + 0.35*end] 구간에서 채워짐
+  const layerAnims = layers.map(layer => {
+    const fs = 0.10 + 0.35 * layer.start;
+    const fe = Math.max(fs + 0.001, 0.10 + 0.35 * layer.end);
+    return {
+      heightAnim: liquidProg.interpolate({
+        inputRange: [fs, fe],
+        outputRange: [0, Math.max(1, Math.round(layer.frac * liqH))],
+        extrapolate: 'clamp',
+      }),
+      bottom: 108 - gb + Math.round(layer.start * liqH),
+      color:  layer.color,
+    };
+  });
+
+  const simBg      = isDark ? '#0e0d1a' : '#e8e4da';
+  const glassStroke = isDark ? 'rgba(255,255,255,0.28)' : 'rgba(0,0,0,0.18)';
+  const glassTopStroke = isDark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.28)';
+  const glassFill  = isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)';
+  const iceFill    = isDark ? 'rgba(255,255,255,0.34)' : 'rgba(180,220,255,0.55)';
+  const iceStroke  = isDark ? 'rgba(255,255,255,0.45)' : 'rgba(120,180,240,0.6)';
+  const labelColor = isDark ? 'rgba(255,255,255,0.38)' : 'rgba(0,0,0,0.28)';
+
   return (
-    <View style={{ height: 140, backgroundColor: isDark ? '#0e0d1a' : '#16141f', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+    <View style={{ height: 140, backgroundColor: simBg, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
       {/* 배경 컬러 워시 */}
       <Animated.View style={{
         position: 'absolute', top: 0, left: 0, right: 0, height: 72,
@@ -5390,33 +6055,47 @@ function RecipeSimAnimation({ recipe, lang }: { recipe: Recipe; lang: 'en' | 'ko
       }} />
 
       <View style={{ position: 'relative', width: 80, height: 108 }}>
-        {/* 액체 레이어 — 아래서 차오름 */}
-        <Animated.View style={{
-          position: 'absolute',
-          bottom: 108 - gb,
-          left: cx - wb + 1, width: (wb - 1) * 2,
-          height: liquidH,
-          backgroundColor: recipe.color,
-          opacity: 0.80,
-          borderBottomLeftRadius: 2, borderBottomRightRadius: 2,
-        }} />
+        {/* 액체 레이어 — 재료별 순서대로 아래서 차오름 */}
+        {layerAnims.length > 0 ? layerAnims.map((la, i) => (
+          <Animated.View key={i} style={{
+            position: 'absolute',
+            bottom: la.bottom,
+            left: cx - wb + 1, width: (wb - 1) * 2,
+            height: la.heightAnim,
+            backgroundColor: la.color,
+            opacity: 0.85,
+            borderBottomLeftRadius: i === 0 ? 2 : 0,
+            borderBottomRightRadius: i === 0 ? 2 : 0,
+          }} />
+        )) : (
+          // fallback: 단색
+          <Animated.View style={{
+            position: 'absolute',
+            bottom: 108 - gb,
+            left: cx - wb + 1, width: (wb - 1) * 2,
+            height: liquidProg.interpolate({ inputRange: [0.10, 0.45], outputRange: [0, liqH], extrapolate: 'clamp' }),
+            backgroundColor: recipe.color,
+            opacity: 0.80,
+            borderBottomLeftRadius: 2, borderBottomRightRadius: 2,
+          }} />
+        )}
 
         {/* 얼음 */}
         <Animated.View style={{ position: 'absolute', top: 0, left: 0, opacity: iceOpacity }}>
           <Svg width={80} height={108} viewBox="0 0 80 108">
             <SvgRect x={cx-13} y={gb-19} width={13} height={9} rx={2}
-              fill="rgba(255,255,255,0.34)" stroke="rgba(255,255,255,0.45)" strokeWidth={0.7} />
+              fill={iceFill} stroke={iceStroke} strokeWidth={0.7} />
             <SvgRect x={cx+3}  y={gb-21} width={11} height={8} rx={2}
-              fill="rgba(255,255,255,0.28)" stroke="rgba(255,255,255,0.38)" strokeWidth={0.7} />
+              fill={iceFill} stroke={iceStroke} strokeWidth={0.7} />
           </Svg>
         </Animated.View>
 
         {/* 잔 외곽선 (항상 최상위) */}
         <Svg width={80} height={108} viewBox="0 0 80 108" style={{ position: 'absolute', top: 0, left: 0 }}>
           <Path d={`M ${cx-wt} ${gt} L ${cx+wt} ${gt} L ${cx+wb} ${gb} L ${cx-wb} ${gb} Z`}
-            fill="rgba(255,255,255,0.02)" stroke="rgba(255,255,255,0.28)" strokeWidth={1.5} />
+            fill={glassFill} stroke={glassStroke} strokeWidth={1.5} />
           <Line x1={cx-wt} y1={gt} x2={cx+wt} y2={gt}
-            stroke="rgba(255,255,255,0.45)" strokeWidth={2} strokeLinecap="round" />
+            stroke={glassTopStroke} strokeWidth={2} strokeLinecap="round" />
         </Svg>
 
         {/* 스트로우 — opacity(JS) / transform(native) 분리 */}
@@ -5438,7 +6117,7 @@ function RecipeSimAnimation({ recipe, lang }: { recipe: Recipe; lang: 'en' | 'ko
         </Animated.View>
       </View>
 
-      <Text style={{ color: 'rgba(255,255,255,0.38)', fontSize: 9, fontWeight: '600', letterSpacing: 1.1, marginTop: 4 }}>
+      <Text style={{ color: labelColor, fontSize: 9, fontWeight: '600', letterSpacing: 1.1, marginTop: 4 }}>
         {lang === 'ko' ? '믹싱 시뮬레이션' : 'MIXING SIMULATION'}
       </Text>
     </View>
@@ -5602,11 +6281,117 @@ function IngredientPickerSheet({ visible, onClose, available, selected, onToggle
   );
 }
 
-function RecipeCard({ recipe, lang, expanded, onPress }: {
-  recipe: Recipe; lang: 'en' | 'ko'; expanded: boolean; onPress: () => void;
+function IngredientImage({ name, size, accentColor }: { name: string; size: number; accentColor: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed || !name) {
+    return <IngredientSvgIcon name={name || ''} size={size} color={accentColor} />;
+  }
+  return (
+    <ExpoImage
+      source={{ uri: `https://www.thecocktaildb.com/images/ingredients/${encodeURIComponent(name)}-Small.png` }}
+      style={{ width: size, height: size }}
+      contentFit="contain"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+function MiniGlassThumbnail({ snapshot, width = 44, height = 54, forceDark }: {
+  snapshot: NonNullable<Recipe['simSnapshot']>;
+  width?: number; height?: number; forceDark?: boolean;
+}) {
+  const isDark = useIsDark();
+  const dark = forceDark ?? isDark;
+
+  // GLASS_THUMB is defined in the 50×74 native space (tCX=25) —
+  // the same coordinate system used by the glass selector in the Mix tab.
+  const NATIVE_W = 50, NATIVE_H = 74, tCX = 25;
+  const th = GLASS_THUMB[snapshot.glassType as GlassType] ?? GLASS_THUMB.rocks;
+
+  // Fit inside the requested canvas while preserving the simulator's aspect ratio.
+  const s  = Math.min(width / NATIVE_W, height / NATIVE_H);
+  const ox = (width  - NATIVE_W * s) / 2;
+  const oy = (height - NATIVE_H * s) / 2;
+
+  const cx = tCX   * s + ox;
+  const gt = th.tGT * s + oy;
+  const gb = th.tGB * s + oy;
+  const wt = th.tWT * s;
+  const wb = th.tWB * s;
+  const liqH = gb - gt;
+
+  const outlineColor = dark ? 'rgba(255,255,255,0.32)' : 'rgba(60,50,80,0.45)';
+  const rimColor     = dark ? 'rgba(255,255,255,0.55)' : 'rgba(60,50,80,0.65)';
+  const glassFill    = dark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.03)';
+  const clipId = `gc_${Math.round(width)}_${Math.round(height)}_${snapshot.glassType}`;
+
+  let cum = 0;
+  const layers = snapshot.layers.map(layer => {
+    cum += layer.frac;
+    return {
+      color: layer.color,
+      h: Math.max(1, layer.frac * liqH),
+      y: gb - cum * liqH,
+    };
+  });
+
+  return (
+    <Svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
+      <Defs>
+        <ClipPath id={clipId}>
+          <Path d={`M ${cx-wt} ${gt} L ${cx+wt} ${gt} L ${cx+wb} ${gb} L ${cx-wb} ${gb} Z`} />
+        </ClipPath>
+      </Defs>
+
+      {/* Liquid layers clipped to glass shape */}
+      <G clipPath={`url(#${clipId})`}>
+        {layers.map((l, i) => (
+          <SvgRect key={i} x={cx - wt} y={l.y} width={wt * 2} height={l.h + 1}
+            fill={l.color} opacity={0.92} />
+        ))}
+        {/* Left-edge sheen */}
+        <Path
+          d={`M ${cx-wt+s} ${gt} L ${cx-wt+s*4} ${gt} L ${cx-wb+s*3} ${gb} L ${cx-wb+s} ${gb} Z`}
+          fill="rgba(255,255,255,0.09)" />
+      </G>
+
+      {/* Ice cube(s) */}
+      {snapshot.iceType !== 'none' && (
+        <>
+          <SvgRect x={cx - wt*0.55} y={gb - liqH*0.25} width={wt*0.50} height={liqH*0.16} rx={s}
+            fill="rgba(218,244,255,0.42)" stroke="rgba(255,255,255,0.58)" strokeWidth={0.6} />
+          {snapshot.iceType === 'cubed' && (
+            <SvgRect x={cx + wt*0.08} y={gb - liqH*0.28} width={wt*0.44} height={liqH*0.14} rx={s}
+              fill="rgba(218,244,255,0.34)" stroke="rgba(255,255,255,0.46)" strokeWidth={0.5} />
+          )}
+        </>
+      )}
+
+      {/* Glass outline */}
+      <Path d={`M ${cx-wt} ${gt} L ${cx+wt} ${gt} L ${cx+wb} ${gb} L ${cx-wb} ${gb} Z`}
+        fill={glassFill} stroke={outlineColor} strokeWidth={1.2} />
+      <Line x1={cx-wt} y1={gt} x2={cx+wt} y2={gt}
+        stroke={rimColor} strokeWidth={1.8} strokeLinecap="round" />
+
+      {/* Martini stem */}
+      {snapshot.glassType === 'martini' && (
+        <>
+          <Line x1={cx} y1={gb} x2={cx} y2={gb + s*7}
+            stroke={outlineColor} strokeWidth={1.2} />
+          <Line x1={cx - s*9} y1={gb + s*7} x2={cx + s*9} y2={gb + s*7}
+            stroke={outlineColor} strokeWidth={1.2} strokeLinecap="round" />
+        </>
+      )}
+    </Svg>
+  );
+}
+
+function RecipeCard({ recipe, lang, expanded, onPress, isCustom }: {
+  recipe: Recipe; lang: 'en' | 'ko'; expanded: boolean; onPress: () => void; isCustom?: boolean;
 }) {
   const C = useColors();
   const isDark = useIsDark();
+  const { updateCustomRecipe } = useAppStore();
 
   const ingredients = lang === 'ko' ? recipe.ingredientsKo : recipe.ingredients;
   const steps = lang === 'ko' ? recipe.stepsKo : recipe.stepsEn;
@@ -5655,11 +6440,7 @@ function RecipeCard({ recipe, lang, expanded, onPress }: {
                   borderWidth: 1, borderColor: `${recipe.color}40`,
                   overflow: 'hidden', alignItems: 'center', justifyContent: 'center',
                 }}>
-                  <ExpoImage
-                    source={{ uri: `https://www.thecocktaildb.com/images/ingredients/${encodeURIComponent(ingName)}-Small.png` }}
-                    style={{ width: 22, height: 22 }}
-                    contentFit="contain"
-                  />
+                  <IngredientImage name={ingName} size={22} accentColor={recipe.color} />
                 </View>
               );
             })}
@@ -5677,9 +6458,14 @@ function RecipeCard({ recipe, lang, expanded, onPress }: {
             )}
           </View>
         </View>
-        <Svg width={16} height={16} viewBox="0 0 16 16" style={{ transform: [{ rotate: expanded ? '90deg' : '0deg' }] }}>
-          <Path d="M6 3.5 L11.5 8 L6 12.5" stroke={C.textDim} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-        </Svg>
+        <View style={{ alignItems: 'center', gap: 6 }}>
+          {recipe.simSnapshot && (
+            <MiniGlassThumbnail snapshot={recipe.simSnapshot} />
+          )}
+          <Svg width={16} height={16} viewBox="0 0 16 16" style={{ transform: [{ rotate: expanded ? '90deg' : '0deg' }] }}>
+            <Path d="M6 3.5 L11.5 8 L6 12.5" stroke={C.textDim} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+          </Svg>
+        </View>
       </View>
 
       {/* Expanded detail */}
@@ -5706,11 +6492,7 @@ function RecipeCard({ recipe, lang, expanded, onPress }: {
                     overflow: 'hidden', alignItems: 'center', justifyContent: 'center',
                     marginRight: 10, flexShrink: 0,
                   }}>
-                    <ExpoImage
-                      source={{ uri: `https://www.thecocktaildb.com/images/ingredients/${encodeURIComponent(ingNameEn)}-Small.png` }}
-                      style={{ width: 26, height: 26 }}
-                      contentFit="contain"
-                    />
+                    <IngredientImage name={ingNameEn} size={26} accentColor={recipe.color} />
                   </View>
                   <Text style={{ fontSize: 13, color: isDark ? '#c0c0d0' : '#3a3830', flex: 1 }}>{ing}</Text>
                 </View>
@@ -5732,6 +6514,51 @@ function RecipeCard({ recipe, lang, expanded, onPress }: {
                 <Text style={{ fontSize: 13, color: isDark ? '#c0c0d0' : '#3a3830', flex: 1, lineHeight: 19 }}>{step}</Text>
               </View>
             ))}
+
+            {isCustom && (
+              <>
+                <View style={{ height: 1, backgroundColor: isDark ? '#1e1e2e' : '#e8e4de', marginVertical: 14 }} />
+                <View style={{
+                  flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                  backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+                  borderRadius: 12, padding: 14,
+                  borderWidth: 1,
+                  borderColor: recipe.isPublic
+                    ? (isDark ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.18)')
+                    : (isDark ? '#1e1e2e' : '#e0dcd4'),
+                }}>
+                  <View style={{ flex: 1, marginRight: 12 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? '#c0c0d0' : '#3a3830' }}>
+                      {lang === 'ko' ? '탐색 피드에 공개' : 'Share to Explore'}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: isDark ? '#686880' : '#a0a0a0', marginTop: 2 }}>
+                      {lang === 'ko' ? '이 레시피가 탐색 탭 피드에 노출됩니다' : 'This recipe will appear in Explore'}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => updateCustomRecipe(recipe.id, {
+                      isPublic: !recipe.isPublic,
+                      ...(!recipe.isPublic ? { publicSince: Date.now() } : {}),
+                    })}
+                    activeOpacity={0.8}
+                    style={{
+                      width: 46, height: 28, borderRadius: 14,
+                      backgroundColor: recipe.isPublic ? recipe.color : (isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.09)'),
+                      borderWidth: 1,
+                      borderColor: recipe.isPublic ? recipe.color : (isDark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.14)'),
+                      justifyContent: 'center', paddingHorizontal: 3,
+                    }}
+                  >
+                    <View style={{
+                      width: 22, height: 22, borderRadius: 11, backgroundColor: '#fff',
+                      alignSelf: recipe.isPublic ? 'flex-end' : 'flex-start',
+                      shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+                      shadowOpacity: 0.22, shadowRadius: 2, elevation: 2,
+                    }} />
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
         </View>
       )}
@@ -6033,6 +6860,15 @@ function MixScreen() {
       '맛있게 즐기세요!',
     ];
 
+    const simTotal = selections.reduce((s, sel) => s + sel.parts, 0);
+    const simLayers = simTotal > 0 ? selections.map(sel => {
+      const ing = selected.find(x => x.id === sel.ingredientId);
+      return {
+        color: ing ? getIngredientColor(ing.name, ing.color) : '#888888',
+        frac: sel.parts / simTotal,
+      };
+    }) : [];
+
     const newRecipe: Recipe = {
       id,
       name: customName,
@@ -6048,6 +6884,7 @@ function MixScreen() {
       stepsEn,
       stepsKo,
       color: primaryIng ? primaryIng.color : '#8060ff',
+      simSnapshot: { glassType: glass, iceType, layers: simLayers },
     };
 
     addCustomRecipe(newRecipe);
@@ -6067,6 +6904,7 @@ function MixScreen() {
         en: 'A custom cocktail created in My Bar.',
         ko: '마이 바에서 직접 만든 커스텀 칵테일입니다.',
       },
+      simSnapshot: { glassType: glass, iceType, layers: simLayers },
     });
 
     setNameModal(false);
@@ -6080,7 +6918,7 @@ function MixScreen() {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
-      <ScrollView scrollEnabled={!stirring} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 90 }}>
+      <ScrollView scrollEnabled={!stirring} showsVerticalScrollIndicator={false} bounces={false} contentContainerStyle={{ paddingBottom: 90 }}>
 
         {/* ── 시뮬레이션 히어로 ── */}
         <MixSimulator selected={selected} lang={lang} onReset={clear} onStageChange={setSimStage} onSaveRecipe={handleSaveRecipe} />
@@ -6148,12 +6986,12 @@ function MixScreen() {
           lang={lang}
         />
 
-        {/* AI 분석 버튼 + 결과 */}
-        <View style={{ paddingHorizontal: 20, marginTop: 16 }}>
+        {/* AI 분석 버튼 + 결과 — 재료 선택 시부터 표시 */}
+        {selected.length > 0 && <View style={{ paddingHorizontal: 20, marginTop: 16 }}>
           <TouchableOpacity
-            style={[styles.analyzeBtn, (selected.length === 0 || simStage !== 'serve') && { opacity: 0.42 }]}
+            style={[styles.analyzeBtn, selected.length === 0 && { opacity: 0.42 }]}
             onPress={handleAnalyze}
-            disabled={selected.length === 0 || analyzing || simStage !== 'serve'}
+            disabled={selected.length === 0 || analyzing}
           >
             <Text style={styles.analyzeTxt}>{analyzing ? t.analyzing : t.analyzeBtn}</Text>
           </TouchableOpacity>
@@ -6362,7 +7200,7 @@ function MixScreen() {
               </TouchableOpacity>
             </View>
           )}
-        </View>
+        </View>}
 
         {/* ── 레시피 섹션 (하단) ── */}
         <View style={{
@@ -6398,6 +7236,7 @@ function MixScreen() {
               lang={lang}
               expanded={expandedId === recipe.id}
               onPress={() => setExpandedId(expandedId === recipe.id ? null : recipe.id)}
+              isCustom={recipe.id.startsWith('custom_')}
             />
           ))}
         </View>
@@ -6483,6 +7322,7 @@ interface BarPost {
   playerStyleId:  PlayerStyleId;
   playerColorId:  PlayerColorId;
   bgmUrl: string;
+  profileAvatarIdx?: number;
   spiritRecords?: Record<string, SpiritRecord>;
 }
 
@@ -6493,6 +7333,7 @@ const BAR_POSTS: BarPost[] = [
     likes:342, cardH:275, neonColor:'#00e0ff', wallThemeId:'slate', lightColor:'#60d0ff',
     shelfThemeId:'maple', counterThemeId:'slate', playerStyleId:'cd', playerColorId:'classic',
     bgmUrl: 'https://knkx-live-a.edge.audiocdn.com/6285_128k',
+    profileAvatarIdx: 0,
     spiritRecords: {
       Gin:          { rating:5, noteEn:'Crisp and floral, perfect for summer evenings.',     noteKo:'꽃향기가 나고 상쾌해요. 여름 저녁엔 이게 최고예요.',   profile:{sweet:2,sour:1,bitter:1,body:2,aroma:5} },
       Vodka:        { rating:3, noteEn:'Clean and neutral. A reliable base spirit.',         noteKo:'깔끔하고 무난해요. 어떤 칵테일에도 잘 맞아요.',        profile:{sweet:1,sour:0,bitter:1,body:2,aroma:1} },
@@ -6506,6 +7347,7 @@ const BAR_POSTS: BarPost[] = [
     likes:189, cardH:205, neonColor:'#9060ff', wallThemeId:'wood', lightColor:'#ffd060',
     shelfThemeId:'walnut', counterThemeId:'marble', playerStyleId:'cassette', playerColorId:'wood',
     bgmUrl: 'https://streaming.live365.com/b05055_128mp3',
+    profileAvatarIdx: 1,
     spiritRecords: {
       'Japanese Whisky': { rating:5, noteEn:'Delicate and precise. The art of Japanese craftsmanship.', noteKo:'섬세하고 정밀해요. 일본 장인 정신의 예술이에요.', profile:{sweet:4,sour:0,bitter:2,body:4,aroma:5} },
       'Irish whiskey':   { rating:4, noteEn:'Smooth and approachable. Triple distilled perfection.',     noteKo:'부드럽고 접근하기 쉬워요. 3번 증류된 완벽함이에요.',  profile:{sweet:3,sour:1,bitter:1,body:3,aroma:3} },
@@ -6519,6 +7361,7 @@ const BAR_POSTS: BarPost[] = [
     likes:567, cardH:205, neonColor:'#00e880', wallThemeId:'forest', lightColor:'#60ff90',
     shelfThemeId:'cherry', counterThemeId:'wood', playerStyleId:'radio', playerColorId:'black',
     bgmUrl: 'http://ais-sa2.wdc01.cdnstream.com:80/1992_128.mp3',
+    profileAvatarIdx: 2,
     spiritRecords: {
       'Light rum': { rating:5, noteEn:'Tropical vibes in every sip. Absolutely love it.', noteKo:'한 모금에 트로피칼이 느껴져요. 정말 최애!',      profile:{sweet:3,sour:1,bitter:1,body:2,aroma:4} },
       'Dark rum':  { rating:5, noteEn:'Rich and molasses-heavy. Complex depth in every sip.', noteKo:'묵직하고 당밀향이 강해요. 깊은 복잡함이 있어요.', profile:{sweet:4,sour:1,bitter:2,body:5,aroma:5} },
@@ -6533,6 +7376,7 @@ const BAR_POSTS: BarPost[] = [
     likes:98, cardH:275, neonColor:'#ffb830', wallThemeId:'brick', lightColor:'#ff9820',
     shelfThemeId:'oak', counterThemeId:'marble', playerStyleId:'cd', playerColorId:'cream',
     bgmUrl: 'https://knkx-live-a.edge.audiocdn.com/6285_128k',
+    profileAvatarIdx: 3,
     spiritRecords: {
       Gin:      { rating:5, noteEn:'Complex botanicals, juniper forward. Pure joy.',     noteKo:'복잡한 보타니컬, 주니퍼가 지배적이에요. 최고!',    profile:{sweet:1,sour:1,bitter:2,body:2,aroma:5} },
       Absinthe: { rating:4, noteEn:'Anise-forward and mystical. The green fairy is real.', noteKo:'아니스향이 강하고 신비로워요. 녹색 요정이 정말 있어요.', profile:{sweet:1,sour:0,bitter:3,body:2,aroma:5} },
@@ -6546,6 +7390,7 @@ const BAR_POSTS: BarPost[] = [
     likes:891, cardH:275, neonColor:'#e040fb', wallThemeId:'wood', lightColor:'#ffd060',
     shelfThemeId:'ebony', counterThemeId:'marble', playerStyleId:'cassette', playerColorId:'silver',
     bgmUrl: 'https://streaming.live365.com/b05055_128mp3',
+    profileAvatarIdx: 4,
     spiritRecords: {
       Bourbon: { rating:5, noteEn:'The backbone of classic cocktails. Essential.',     noteKo:'클래식 칵테일의 근간이에요. 반드시 있어야 해요.',     profile:{sweet:3,sour:0,bitter:2,body:4,aroma:4} },
       Gin:     { rating:5, noteEn:'Versatile and aromatic. The classic spirit.',       noteKo:'다재다능하고 향긋해요. 진정한 클래식 주류죠.',        profile:{sweet:1,sour:1,bitter:2,body:2,aroma:5} },
@@ -6560,6 +7405,7 @@ const BAR_POSTS: BarPost[] = [
     likes:215, cardH:205, neonColor:'#ff4060', wallThemeId:'brick', lightColor:'#ff80c0',
     shelfThemeId:'maple', counterThemeId:'steel', playerStyleId:'radio', playerColorId:'cream',
     bgmUrl: 'http://ais-sa2.wdc01.cdnstream.com:80/1992_128.mp3',
+    profileAvatarIdx: 5,
     spiritRecords: {
       Cognac:   { rating:5, noteEn:'Pure luxury in a glass. Sip slowly, savour every drop.', noteKo:'한 잔에 담긴 럭셔리. 천천히 음미해야 해요.',      profile:{sweet:3,sour:1,bitter:1,body:5,aroma:5} },
       Amaretto: { rating:5, noteEn:'Sweet and romantic. My go-to dessert drink.',             noteKo:'달콤하고 로맨틱해요. 디저트 주류로 최고예요.',    profile:{sweet:5,sour:0,bitter:1,body:3,aroma:5} },
@@ -6573,6 +7419,7 @@ const BAR_POSTS: BarPost[] = [
     likes:443, cardH:205, neonColor:'#00e0ff', wallThemeId:'slate', lightColor:'#60d0ff',
     shelfThemeId:'walnut', counterThemeId:'slate', playerStyleId:'cd', playerColorId:'black',
     bgmUrl: 'https://knkx-live-a.edge.audiocdn.com/6285_128k',
+    profileAvatarIdx: 0,
     spiritRecords: {
       'Japanese Whisky': { rating:5, noteEn:'The peat and precision of Japanese craft. Unmatched.', noteKo:'일본 장인 정신의 피트와 정밀함. 타의 추종을 불허해요.', profile:{sweet:4,sour:0,bitter:2,body:4,aroma:5} },
       Scotch:            { rating:5, noteEn:'The soul of Scotland in every drop. Pure refinement.', noteKo:'스코틀랜드의 영혼이 담긴 방울. 최고의 정제미.',       profile:{sweet:2,sour:0,bitter:3,body:4,aroma:5} },
@@ -6587,6 +7434,7 @@ const BAR_POSTS: BarPost[] = [
     likes:312, cardH:275, neonColor:'#ffb830', wallThemeId:'forest', lightColor:'#ff9820',
     shelfThemeId:'cherry', counterThemeId:'wood', playerStyleId:'cassette', playerColorId:'silver',
     bgmUrl: 'https://streaming.live365.com/b05055_128mp3',
+    profileAvatarIdx: 1,
     spiritRecords: {
       Mezcal:    { rating:5, noteEn:'Smoky soul in a glass. I could drink this forever.',      noteKo:'잔 속의 스모키한 영혼. 평생 마실 수 있어요.',         profile:{sweet:2,sour:1,bitter:2,body:4,aroma:5} },
       Tequila:   { rating:5, noteEn:'Life is too short for bad tequila. This is magic.',       noteKo:'나쁜 테킬라를 마실 시간은 없어요. 이건 마법이에요.',  profile:{sweet:2,sour:2,bitter:1,body:3,aroma:4} },
@@ -6600,6 +7448,7 @@ const BAR_POSTS: BarPost[] = [
     likes:478, cardH:275, neonColor:'#9060ff', wallThemeId:'slate', lightColor:'#c060ff',
     shelfThemeId:'oak', counterThemeId:'marble', playerStyleId:'radio', playerColorId:'wood',
     bgmUrl: 'http://ais-sa2.wdc01.cdnstream.com:80/1992_128.mp3',
+    profileAvatarIdx: 2,
     spiritRecords: {
       Campari: { rating:5, noteEn:'The holy trinity of bitters. Central to my life.',  noteKo:'비터즈의 성삼위일체. 제 삶의 중심이에요.',            profile:{sweet:2,sour:1,bitter:5,body:3,aroma:5} },
       Gin:     { rating:5, noteEn:'The perfect Negroni partner. Juniper is key.',      noteKo:'완벽한 네그로니 파트너. 주니퍼가 핵심이에요.',        profile:{sweet:1,sour:1,bitter:2,body:2,aroma:5} },
@@ -6613,6 +7462,7 @@ const BAR_POSTS: BarPost[] = [
     likes:203, cardH:205, neonColor:'#ff4060', wallThemeId:'brick', lightColor:'#ffd060',
     shelfThemeId:'ebony', counterThemeId:'steel', playerStyleId:'cd', playerColorId:'silver',
     bgmUrl: 'https://knkx-live-a.edge.audiocdn.com/6285_128k',
+    profileAvatarIdx: 3,
     spiritRecords: {
       Campari:  { rating:5, noteEn:'Aperitivo ritual starts with Campari. Always.',    noteKo:'아페리티보는 항상 캄파리로 시작해요. 무조건!',        profile:{sweet:2,sour:1,bitter:5,body:3,aroma:4} },
       Cognac:   { rating:5, noteEn:'Warm and fruity. A digestif dream after dinner.',  noteKo:'따뜻하고 과일향이 나요. 디너 후 디제스티프 최고!',  profile:{sweet:3,sour:1,bitter:1,body:4,aroma:5} },
@@ -6626,6 +7476,7 @@ const BAR_POSTS: BarPost[] = [
     likes:763, cardH:205, neonColor:'#00e0ff', wallThemeId:'wood', lightColor:'#60d0ff',
     shelfThemeId:'maple', counterThemeId:'wood', playerStyleId:'cassette', playerColorId:'black',
     bgmUrl: 'https://streaming.live365.com/b05055_128mp3',
+    profileAvatarIdx: 4,
     spiritRecords: {
       'Light rum': { rating:5, noteEn:'The soul of Caribbean sunshine. Smooth and joyful.',  noteKo:'카리브해 햇살의 영혼이에요. 부드럽고 즐거워요.',      profile:{sweet:3,sour:1,bitter:1,body:2,aroma:3} },
       'Dark rum':  { rating:5, noteEn:'Deep molasses richness. My secret for amazing cocktails.', noteKo:'깊은 당밀 풍미. 놀라운 칵테일의 비밀이에요.',      profile:{sweet:4,sour:1,bitter:2,body:5,aroma:5} },
@@ -6640,6 +7491,7 @@ const BAR_POSTS: BarPost[] = [
     likes:91, cardH:275, neonColor:'#ff4060', wallThemeId:'forest', lightColor:'#ff9820',
     shelfThemeId:'cherry', counterThemeId:'marble', playerStyleId:'radio', playerColorId:'cream',
     bgmUrl: 'http://ais-sa2.wdc01.cdnstream.com:80/1992_128.mp3',
+    profileAvatarIdx: 5,
     spiritRecords: {
       Mezcal:    { rating:5, noteEn:'The fire that lives in smoke. I breathe this.',     noteKo:'연기 속에 사는 불꽃. 이걸 들이마셔요.',              profile:{sweet:2,sour:1,bitter:2,body:4,aroma:5} },
       Absinthe:  { rating:5, noteEn:'Green fire and mystery. Nothing else compares.',     noteKo:'녹색 불꽃과 신비. 다른 건 비교도 안 돼요.',          profile:{sweet:1,sour:0,bitter:3,body:2,aroma:5} },
@@ -6654,6 +7506,7 @@ const BAR_POSTS: BarPost[] = [
     likes:534, cardH:275, neonColor:'#9060ff', wallThemeId:'wood', lightColor:'#ffd060',
     shelfThemeId:'walnut', counterThemeId:'slate', playerStyleId:'cd', playerColorId:'wood',
     bgmUrl: 'https://knkx-live-a.edge.audiocdn.com/6285_128k',
+    profileAvatarIdx: 0,
     spiritRecords: {
       Cognac:              { rating:5, noteEn:'The pinnacle of distillation. Timeless and noble.',       noteKo:'증류의 정점이에요. 시대를 초월한 고귀함이 있어요.',    profile:{sweet:3,sour:1,bitter:1,body:5,aroma:5} },
       Scotch:              { rating:5, noteEn:'Decades of patience in every drop. Magnificent.',         noteKo:'한 방울에 수십 년의 인내가 담겨 있어요. 경이로워요.', profile:{sweet:2,sour:0,bitter:2,body:4,aroma:5} },
@@ -6668,6 +7521,7 @@ const BAR_POSTS: BarPost[] = [
     likes:289, cardH:205, neonColor:'#ffb830', wallThemeId:'slate', lightColor:'#60ff90',
     shelfThemeId:'oak', counterThemeId:'steel', playerStyleId:'cassette', playerColorId:'classic',
     bgmUrl: 'https://streaming.live365.com/b05055_128mp3',
+    profileAvatarIdx: 1,
     spiritRecords: {
       Gin:         { rating:5, noteEn:'Citrus-forward gins are my obsession. Zesty!',       noteKo:'시트러스 진에 집착해요. 상큼함이 넘쳐요!',             profile:{sweet:1,sour:2,bitter:1,body:2,aroma:5} },
       Vodka:       { rating:4, noteEn:'Clean canvas for citrus experiments.',               noteKo:'시트러스 실험을 위한 깨끗한 캔버스예요.',              profile:{sweet:1,sour:0,bitter:1,body:2,aroma:2} },
@@ -6682,6 +7536,7 @@ const BAR_POSTS: BarPost[] = [
     likes:621, cardH:205, neonColor:'#00e880', wallThemeId:'wood', lightColor:'#60ff90',
     shelfThemeId:'ebony', counterThemeId:'marble', playerStyleId:'radio', playerColorId:'silver',
     bgmUrl: 'http://ais-sa2.wdc01.cdnstream.com:80/1992_128.mp3',
+    profileAvatarIdx: 2,
     spiritRecords: {
       Vodka:               { rating:4, noteEn:'Modern and clean. Great for fusion cocktails.',      noteKo:'모던하고 깔끔해요. 퓨전 칵테일에 완벽해요.',         profile:{sweet:1,sour:0,bitter:1,body:2,aroma:2} },
       Gin:                 { rating:4, noteEn:'East-meets-West botanicals. Surprisingly versatile.',noteKo:'동서양의 보타니컬이 만나요. 놀랍도록 다재다능해요.',  profile:{sweet:1,sour:1,bitter:2,body:2,aroma:4} },
@@ -6695,6 +7550,7 @@ const BAR_POSTS: BarPost[] = [
     likes:157, cardH:275, neonColor:'#e040fb', wallThemeId:'brick', lightColor:'#ff80c0',
     shelfThemeId:'maple', counterThemeId:'wood', playerStyleId:'cd', playerColorId:'cream',
     bgmUrl: 'https://knkx-live-a.edge.audiocdn.com/6285_128k',
+    profileAvatarIdx: 3,
     spiritRecords: {
       Amaretto:  { rating:5, noteEn:'Sweet and dreamy. Like love in liquid form.',      noteKo:'달콤하고 몽환적이에요. 액체 형태의 사랑 같아요.',        profile:{sweet:5,sour:0,bitter:1,body:3,aroma:5} },
       Cognac:    { rating:5, noteEn:'Romantic and warm. Perfect for quiet evenings.',   noteKo:'로맨틱하고 따뜻해요. 조용한 저녁에 딱이에요.',          profile:{sweet:3,sour:1,bitter:1,body:4,aroma:5} },
@@ -6705,293 +7561,302 @@ const BAR_POSTS: BarPost[] = [
 ];
 
 // ─────────────────────────────────────────────────────────────────
-// VISITOR BAR MODAL — shows another user's bar in My-Bar style
+// EXPLORE FEED — spirit tasting records + recipe highlights
 // ─────────────────────────────────────────────────────────────────
-function VisitorBarWall({ barName, neonColor, wallThemeId }: {
-  barName: string; neonColor: string; wallThemeId: WallThemeId;
+interface SpiritFeedPost {
+  kind: 'spirit';
+  id: string;
+  barPostId?: string;
+  userName: string; userNameKo: string;
+  initials: string; c1: string; c2: string;
+  followers: string;
+  neonColor: string;
+  spiritName: string;
+  rating: number;
+  noteEn: string; noteKo: string;
+  profile: FlavorP;
+  minsAgo: number;
+  saveCount: number;
+  profileAvatarIdx?: number;
+}
+
+interface RecipeFeedPost {
+  kind: 'recipe';
+  id: string;
+  barPostId?: string;
+  userName: string; userNameKo: string;
+  initials: string; c1: string; c2: string;
+  followers: string;
+  neonColor: string;
+  recipeId: string;
+  name: string; nameKo: string;
+  color: string;
+  category: string;
+  abv: number | null;
+  difficulty: string;
+  descEn: string; descKo: string;
+  heroApiName?: string;
+  simSnapshot?: { glassType: string; iceType: string; layers: Array<{ color: string; frac: number }> };
+  minsAgo: number;
+  saveCount: number;
+  profileAvatarIdx?: number;
+}
+
+type ExploreFeedPost = SpiritFeedPost | RecipeFeedPost;
+type ExploreFilter = 'all' | 'spirit' | 'recipe';
+type ExploreSort = 'recent' | 'popular';
+
+const SPIRIT_FEED_POSTS: SpiritFeedPost[] = (() => {
+  const flat: SpiritFeedPost[] = [];
+  BAR_POSTS.forEach((post, bi) => {
+    Object.entries(post.spiritRecords ?? {}).forEach(([spiritName, rec], si) => {
+      flat.push({
+        kind: 'spirit',
+        id: `sfp_${post.id}_${si}`,
+        barPostId: post.id,
+        userName: post.barName, userNameKo: post.barNameKo,
+        initials: post.initials, c1: post.c1, c2: post.c2,
+        followers: post.followers,
+        neonColor: post.neonColor,
+        profileAvatarIdx: post.profileAvatarIdx,
+        spiritName,
+        rating: rec.rating,
+        noteEn: rec.noteEn, noteKo: rec.noteKo,
+        profile: rec.profile,
+        minsAgo: ((bi * 19 + si * 7 + 5) % 178) + 3,
+        saveCount: rec.rating * 6 + ((bi * 7 + si * 11) % 25) + 8,
+      });
+    });
+  });
+  const byUser: SpiritFeedPost[][] = [];
+  const keys: string[] = [];
+  flat.forEach(p => {
+    const k = p.userName;
+    const i = keys.indexOf(k);
+    if (i === -1) { keys.push(k); byUser.push([p]); }
+    else byUser[i].push(p);
+  });
+  const result: SpiritFeedPost[] = [];
+  const maxLen = Math.max(...byUser.map(b => b.length));
+  for (let i = 0; i < maxLen; i++) {
+    byUser.forEach(bucket => { if (i < bucket.length) result.push(bucket[i]); });
+  }
+  return result;
+})();
+
+const RECIPE_FEED_POSTS: RecipeFeedPost[] = ALL_RECIPES.map((recipe, ri) => {
+  const post = BAR_POSTS[ri % BAR_POSTS.length];
+  return {
+    kind: 'recipe' as const,
+    id: `rfp_${recipe.id}`,
+    barPostId: post.id,
+    userName: post.barName, userNameKo: post.barNameKo,
+    initials: post.initials, c1: post.c1, c2: post.c2,
+    followers: post.followers,
+    neonColor: post.neonColor,
+    profileAvatarIdx: post.profileAvatarIdx,
+    recipeId: recipe.id,
+    name: recipe.name, nameKo: recipe.nameKo,
+    color: recipe.color,
+    category: recipe.category,
+    abv: recipe.abv,
+    difficulty: recipe.difficulty,
+    descEn: recipe.descEn, descKo: recipe.descKo,
+    heroApiName: recipe.heroApiName,
+    minsAgo: ((ri * 13 + 7) % 230) + 5,
+    saveCount: ((ri * 17 + 11) % 50) + 12,
+  };
+});
+
+// Interleave: 2 spirits then 1 recipe
+const EXPLORE_FEED_POSTS: ExploreFeedPost[] = (() => {
+  const result: ExploreFeedPost[] = [];
+  let si = 0, ri = 0;
+  while (si < SPIRIT_FEED_POSTS.length || ri < RECIPE_FEED_POSTS.length) {
+    if (si < SPIRIT_FEED_POSTS.length) result.push(SPIRIT_FEED_POSTS[si++]);
+    if (si < SPIRIT_FEED_POSTS.length) result.push(SPIRIT_FEED_POSTS[si++]);
+    if (ri < RECIPE_FEED_POSTS.length) result.push(RECIPE_FEED_POSTS[ri++]);
+  }
+  return result;
+})();
+
+// ─────────────────────────────────────────────────────────────────
+// VISITOR BAR MODAL — profile-style view of another user's bar
+// ─────────────────────────────────────────────────────────────────
+
+function VisitorSpiritCell({ apiName, record, onPress }: {
+  apiName: string; record: SpiritRecord; onPress?: () => void;
 }) {
-  const C      = useColors();
-  const styles = useStyles();
-  const isDark = useIsDark();
-  const wallTheme = BAR_WALL_THEMES.find(t => t.id === wallThemeId) ?? BAR_WALL_THEMES[0];
-  const wallBg    = isDark ? wallTheme.darkBg : wallTheme.lightBg;
-  const signColor = isDark ? neonColor : C.accent;
+  const C     = useColors();
+  const cellW = Math.floor(SCREEN_W / 3);
+  const cellH = Math.floor(cellW * 1.25);
+  const imgW  = Math.floor(cellW * 0.52);
+  const imgH  = Math.floor(imgW * 2.1);
   return (
-    <View style={[StyleSheet.absoluteFill, { backgroundColor: wallBg }]} pointerEvents="none">
-      <View style={[styles.grainLine, { top: '14%' }]} />
-      <View style={[styles.grainLine, { top: '38%' }]} />
-      <View style={[styles.grainLine, { top: '62%' }]} />
-      <View style={styles.signArea}>
-        <View style={styles.signFrame}>
-          <View style={[styles.signRule, { borderColor: `${signColor}45` }]} />
-          <View style={{ height: 12 }} />
-          <NeonText text={barName} color={signColor} size={48} script />
-          <Text style={[styles.signEst, { color: `${signColor}70` }]}>EST. 2025</Text>
-          <View style={{ height: 12 }} />
-          <View style={[styles.signRule, { borderColor: `${signColor}38` }]} />
-        </View>
+    <TouchableOpacity activeOpacity={0.85} onPress={onPress}
+      style={{ width: cellW, height: cellH, backgroundColor: `${C.primary}12`, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+      <ExpoImage
+        source={{ uri: `https://www.thecocktaildb.com/images/ingredients/${encodeURIComponent(apiName)}-Medium.png` }}
+        style={{ width: imgW, height: imgH }}
+        contentFit="contain"
+      />
+      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.46)', paddingHorizontal: 5, paddingVertical: 4 }}>
+        <Text style={{ fontSize: 9, fontWeight: '700', color: '#fff' }} numberOfLines={1}>{apiName}</Text>
+        <Text style={{ fontSize: 9, color: '#f0c040', marginTop: 1 }}>
+          {'★'.repeat(record.rating)}{'☆'.repeat(5 - record.rating)}
+        </Text>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
-function VisitorPendantLights({ cabH, lightColor }: { cabH: number; lightColor: string }) {
-  const isDark = useIsDark();
-  if (cabH === 0) return null;
-  const lc       = lightColor;
-  const shelfW   = SCREEN_W - SHELF_MX * 2;
-  const planks   = SHELF_FRACS.map(f => Math.round(cabH * f));
-  const pxLeft   = SHELF_MX + Math.round(shelfW * 0.28);
-  const pxRight  = SHELF_MX + Math.round(shelfW * 0.72);
-  const bulbBg   = isDark ? '#fff8d0' : '#e0d9c4';
-  const cordClr  = isDark ? 'rgba(140,120,80,0.50)' : 'rgba(100,90,70,0.40)';
+function VisitorStaticBottle({ apiName, onPress }: { apiName: string; onPress?: () => void }) {
+  const [failed, setFailed] = useState(false);
+  const imgH   = Math.round(BOTTLE_H * 0.87);
+  const spirit = SEARCH_SPIRITS.find(s => s.apiName === apiName || s.name === apiName);
   return (
-    <>
+    <TouchableOpacity
+      activeOpacity={onPress ? 0.75 : 1}
+      onPress={onPress}
+      disabled={!onPress}
+      style={{ width: SLOT_W, height: BOTTLE_H, alignItems: 'center', justifyContent: 'flex-end' }}
+    >
+      <View style={{
+        width: BOTTLE_W, height: imgH,
+        alignItems: 'center', justifyContent: 'flex-end',
+        shadowColor: '#000', shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.40, shadowRadius: 12,
+      }}>
+        {failed ? (
+          <ShelfBottleSvg spiritType={spirit?.spiritType ?? 'other'} width={BOTTLE_W} height={imgH} />
+        ) : (
+          <ExpoImage
+            source={{ uri: `https://www.thecocktaildb.com/images/ingredients/${encodeURIComponent(apiName)}-Medium.png` }}
+            style={{ width: BOTTLE_W, height: imgH }} contentFit="contain"
+            onError={() => setFailed(true)}
+          />
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function VisitorBarView({ post, onBottlePress }: { post: BarPost; onBottlePress?: (apiName: string) => void }) {
+  const isDark   = useIsDark();
+  const styles   = useStyles();
+
+  const cabH   = Math.round(SH * 0.65);
+  const shelfW = SCREEN_W - SHELF_MX * 2;
+  const planks = SHELF_FRACS.map(f => Math.round(cabH * f));
+
+  const wallTheme = BAR_WALL_THEMES.find(t => t.id === post.wallThemeId) ?? BAR_WALL_THEMES[0];
+  const wallBg    = isDark ? wallTheme.darkBg : wallTheme.lightBg;
+  const neon      = post.neonColor;
+  const lc        = post.lightColor;
+
+  const pxLeft  = SHELF_MX + Math.round(shelfW * 0.28);
+  const pxRight = SHELF_MX + Math.round(shelfW * 0.72);
+
+  const bulbBg       = isDark ? '#fff8d0' : '#e0d9c4';
+  const bulbShadow   = isDark ? lc : 'transparent';
+  const bulbShadowOp = isDark ? 0.55 : 0;
+  const cordColor    = isDark ? 'rgba(140,120,80,0.50)' : 'rgba(100,90,70,0.40)';
+
+  const signH = Math.round(cabH * 0.20);
+
+  return (
+    <View style={{ width: SCREEN_W, height: cabH, backgroundColor: wallBg, overflow: 'hidden' }}>
+
+      {/* Grain lines */}
+      {[0.14, 0.38, 0.62].map(f => (
+        <View key={f} style={[styles.grainLine, { top: `${Math.round(f * 100)}%` }]} />
+      ))}
+
+      {/* Neon sign */}
+      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: signH, alignItems: 'center', justifyContent: 'center' }}>
+        <View style={styles.signFrame}>
+          <View style={[styles.signRule, { borderColor: `${neon}45` }]} />
+          <View style={{ height: 10 }} />
+          <NeonText text={post.barName} color={neon} size={Math.round(signH * 0.44)} script />
+          <Text style={[styles.signEst, { color: `${neon}70` }]}>EST. 2025</Text>
+          <View style={{ height: 10 }} />
+          <View style={[styles.signRule, { borderColor: `${neon}38` }]} />
+        </View>
+      </View>
+
+      {/* Pendant lights */}
       {planks.map((plankY, si) => {
         const bulbY  = plankY - BOTTLE_H - 16;
         const coneH  = BOTTLE_H + 16;
         const coneHW = Math.round(shelfW * 0.32);
         return [pxLeft, pxRight].map((px, pi) => {
-          const id = `vcone_${si}_${pi}`;
+          const coneId = `vbc_${post.id}_${si}_${pi}`;
           return (
-            <React.Fragment key={id}>
-              <View style={{ position: 'absolute', top: 0, left: px - 1, width: 2, height: bulbY + 6, backgroundColor: cordClr }} pointerEvents="none" />
+            <React.Fragment key={coneId}>
+              <View style={{ position: 'absolute', top: 0, left: px - 1, width: 2, height: bulbY + 6, backgroundColor: cordColor }} pointerEvents="none" />
               {isDark && (
                 <Svg width={coneHW * 2} height={coneH} style={{ position: 'absolute', top: bulbY + 2, left: px - coneHW }} pointerEvents="none">
                   <Defs>
-                    <RadialGradient id={id} cx={coneHW} cy={0} r={coneH} fx={coneHW} fy={0} gradientUnits="userSpaceOnUse">
+                    <RadialGradient id={coneId} cx={coneHW} cy={0} r={coneH} fx={coneHW} fy={0} gradientUnits="userSpaceOnUse">
                       <Stop offset="0"    stopColor={lc} stopOpacity={0.30} />
                       <Stop offset="0.35" stopColor={lc} stopOpacity={0.12} />
                       <Stop offset="0.70" stopColor={lc} stopOpacity={0.04} />
                       <Stop offset="1"    stopColor={lc} stopOpacity={0} />
                     </RadialGradient>
                   </Defs>
-                  <Ellipse cx={coneHW} cy={0} rx={coneHW} ry={coneH} fill={`url(#${id})`} />
+                  <Ellipse cx={coneHW} cy={0} rx={coneHW} ry={coneH} fill={`url(#${coneId})`} />
                 </Svg>
               )}
-              <View style={{ position: 'absolute', top: bulbY - 5, left: px - 9, width: 18, height: 18, borderRadius: 9, backgroundColor: bulbBg, shadowColor: isDark ? lc : 'transparent', shadowRadius: 22, shadowOpacity: isDark ? 0.55 : 0, shadowOffset: { width: 0, height: 4 } }} pointerEvents="none" />
+              <View style={{ position: 'absolute', top: bulbY - 5, left: px - 9, width: 18, height: 18, borderRadius: 9, backgroundColor: bulbBg, shadowColor: bulbShadow, shadowRadius: 22, shadowOpacity: bulbShadowOp, shadowOffset: { width: 0, height: 4 }, elevation: isDark ? 8 : 2 }} pointerEvents="none" />
               <View style={{ position: 'absolute', top: bulbY - 1, left: px - 5, width: 10, height: 10, borderRadius: 5, backgroundColor: isDark ? '#ffffff' : '#bfb89e', shadowColor: isDark ? '#ffffff' : 'transparent', shadowRadius: 6, shadowOpacity: isDark ? 0.50 : 0, shadowOffset: { width: 0, height: 0 } }} pointerEvents="none" />
             </React.Fragment>
           );
         });
       })}
-    </>
-  );
-}
 
-function VisitorBottlePanel({ name, post, onClose }: { name: string; post: BarPost; onClose: () => void }) {
-  const C    = useColors();
-  const { lang, savedSpiritIds, toggleSavedSpirit } = useAppStore();
-  const t    = TEXTS[lang];
-
-  const ownerRecord = post.spiritRecords?.[name];
-  const matchSpirit = SEARCH_SPIRITS.find(s => s.apiName === name || s.name === name);
-  const isSaved     = matchSpirit ? savedSpiritIds.includes(matchSpirit.id) : false;
-
-  return (
-    <View style={{
-      position: 'absolute', bottom: 0, left: 0, right: 0,
-      backgroundColor: C.bg,
-      borderTopLeftRadius: 20, borderTopRightRadius: 20,
-      borderTopWidth: 1, borderColor: C.border,
-      paddingHorizontal: 20, paddingTop: 14, paddingBottom: 28,
-    }}>
-      <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: C.border, alignSelf: 'center', marginBottom: 14 }} />
-
-      {/* Header */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 16 }}>
-        <View style={{ width: 58, height: 78, backgroundColor: C.surfaceHi, borderRadius: 10, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderWidth: 1, borderColor: C.border }}>
-          <ExpoImage
-            source={{ uri: `https://www.thecocktaildb.com/images/ingredients/${encodeURIComponent(name)}-Medium.png` }}
-            style={{ width: 46, height: 68 }}
-            contentFit="contain"
-          />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 18, fontWeight: '800', color: C.text }}>{name}</Text>
-          <Text style={{ fontSize: 11, fontWeight: '700', marginTop: 3,
-            color: ownerRecord ? C.primary : C.textDim }}>
-            {ownerRecord
-              ? (lang === 'ko' ? `${post.userNameKo}의 기록` : `${post.userName}'s record`)
-              : (lang === 'ko' ? '기록 없음' : 'No record')}
-          </Text>
-        </View>
-        {/* Scrap/save button */}
-        {matchSpirit && (
-          <TouchableOpacity
-            onPress={() => toggleSavedSpirit(matchSpirit.id)}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            style={{
-              backgroundColor: isSaved ? C.primary : C.surfaceHi,
-              borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6,
-              borderWidth: 1, borderColor: isSaved ? C.primary : C.border,
-            }}
-          >
-            <Text style={{ fontSize: 11, fontWeight: '700', color: isSaved ? C.bg : C.textDim }}>
-              {isSaved ? (lang === 'ko' ? '저장됨' : 'Saved') : (lang === 'ko' ? '저장' : 'Save')}
-            </Text>
-          </TouchableOpacity>
-        )}
-        <TouchableOpacity onPress={onClose} style={{ padding: 6 }}>
-          <Text style={{ fontSize: 16, color: C.textDim }}>✕</Text>
-        </TouchableOpacity>
-      </View>
-
-      {ownerRecord ? (
-        <>
-          {/* 평점 */}
-          <Text style={{ fontSize: 10, fontWeight: '800', color: C.textDim, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 6 }}>
-            {lang === 'ko' ? '평점' : 'RATING'}
-          </Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 16 }}>
-            {[1,2,3,4,5].map(i => (
-              <Text key={i} style={{ fontSize: 24, color: i <= ownerRecord.rating ? C.accent : C.border }}>★</Text>
-            ))}
-            <Text style={{ fontSize: 12, color: C.textDim, marginLeft: 6, fontWeight: '600' }}>{ownerRecord.rating}.0 / 5</Text>
-          </View>
-
-          {/* 기록 */}
-          {(lang === 'ko' ? ownerRecord.noteKo : ownerRecord.noteEn) ? (
-            <View style={{ backgroundColor: C.surfaceHi, borderRadius: 12, padding: 14, marginBottom: 14, borderWidth: 1, borderColor: C.border }}>
-              <Text style={{ fontSize: 10, fontWeight: '800', color: C.primary, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 6 }}>
-                {t.myNotes}
-              </Text>
-              <Text style={{ fontSize: 13, color: C.text, lineHeight: 20, fontStyle: 'italic' }}>
-                {lang === 'ko' ? ownerRecord.noteKo : ownerRecord.noteEn}
-              </Text>
+      {/* Shelf rows */}
+      {planks.map((plankY, si) => {
+        const apiNames = si === 0 ? post.shelf0 : post.shelf1;
+        const ledId    = `vled_${post.id}_${si}`;
+        return (
+          <View key={si} style={{ position: 'absolute', top: plankY - BOTTLE_H, left: SHELF_MX, right: SHELF_MX, height: BOTTLE_H + PLANK_H + 6, overflow: 'visible' }}>
+            <View style={{ position: 'absolute', top: BOTTLE_H - SHELF_OVERLAP, left: 0, right: 0 }}>
+              <WoodPlank shelfW={shelfW} shelfThemeId={post.shelfThemeId} />
             </View>
-          ) : null}
+            <Svg width={shelfW} height={44} style={{ position: 'absolute', top: BOTTLE_H - SHELF_OVERLAP - 3, left: 0 }} pointerEvents="none">
+              <Defs>
+                <LinearGradient id={ledId} x1="0.5" y1="0" x2="0.5" y2="1">
+                  <Stop offset="0"    stopColor="#ffcc28" stopOpacity={isDark ? 0.62 : 0.26} />
+                  <Stop offset="0.08" stopColor="#ff9010" stopOpacity={isDark ? 0.24 : 0.10} />
+                  <Stop offset="0.40" stopColor="#ff6000" stopOpacity={isDark ? 0.08 : 0.03} />
+                  <Stop offset="1"    stopColor="#ff3000" stopOpacity={0} />
+                </LinearGradient>
+              </Defs>
+              <SvgRect x={0} y={0} width={shelfW} height={44} fill={`url(#${ledId})`} />
+            </Svg>
+            <View style={{ position: 'absolute', top: 0, left: 0, flexDirection: 'row', alignItems: 'flex-end', height: BOTTLE_H }}>
+              {apiNames.slice(0, SLOT_COUNT).map((apiName, i) => (
+                <VisitorStaticBottle key={`${apiName}_${i}`} apiName={apiName} onPress={onBottlePress ? () => onBottlePress(apiName) : undefined} />
+              ))}
+              {Array.from({ length: Math.max(0, SLOT_COUNT - apiNames.length) }).map((_, i) => (
+                <View key={`empty_${i}`} style={{ width: SLOT_W, height: BOTTLE_H }} />
+              ))}
+            </View>
+          </View>
+        );
+      })}
 
-          {/* 풍미 프로필 */}
-          <Text style={{ fontSize: 10, fontWeight: '800', color: C.textDim, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 4 }}>
-            {t.flavorProfile}
-          </Text>
-          <RadarChart profile={ownerRecord.profile} labels={t.radarLabels} size={160} />
-        </>
-      ) : (
-        <View style={{ alignItems: 'center', paddingVertical: 20 }}>
-          <Text style={{ fontSize: 36, marginBottom: 10 }}>🍶</Text>
-          <Text style={{ fontSize: 13, color: C.textDim, textAlign: 'center', lineHeight: 20 }}>
-            {lang === 'ko'
-              ? `${post.userNameKo}이(가) 아직 기록하지 않은 주류예요.`
-              : `${post.userName} hasn't recorded this spirit yet.`}
-          </Text>
-        </View>
-      )}
-    </View>
-  );
-}
-
-function VisitorWallPlayer({ playerStyleId, playerColorId, isPlaying }: { playerStyleId: PlayerStyleId; playerColorId: PlayerColorId; isPlaying?: boolean }) {
-  const isDark = useIsDark();
-  const pc = BAR_PLAYER_COLORS.find(c => c.id === playerColorId) ?? BAR_PLAYER_COLORS[0];
-  const bodyFill   = isDark ? pc.dark : pc.light;
-  const bodyStroke = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.10)';
-  const BW = 60, BH = 60, CX = 30, CY = 30;
-  const indicatorColor = isPlaying ? '#00e0ff' : (isDark ? 'rgba(255,255,255,0.30)' : 'rgba(0,0,0,0.22)');
-
-  if (playerStyleId === 'cd') {
-    const CR = 21, CDR = CR - 1;
-    const dotFill = isDark ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.18)';
-    return (
-      <Svg width={BW} height={BH}>
-        <SvgRect x={0} y={0} width={BW} height={BH} rx={10} fill={bodyFill} />
-        <SvgRect x={0} y={0} width={BW} height={BH} rx={10} fill="none" stroke={bodyStroke} strokeWidth="1" />
-        <Circle cx={CX} cy={CY} r={CR + 2} fill={isDark ? '#1a1a26' : '#e0ddd8'} />
-        {[-10,-5,0,5,10].map(dy => <Circle key={`l${dy}`} cx={7}     cy={CY+dy} r={1.1} fill={dotFill} />)}
-        {[-10,-5,0,5,10].map(dy => <Circle key={`r${dy}`} cx={BW-7}  cy={CY+dy} r={1.1} fill={dotFill} />)}
-        <Circle cx={CX} cy={CY} r={CDR}     fill="#1a0802" />
-        <Circle cx={CX} cy={CY} r={CDR-3}   fill="#b04018" />
-        <Circle cx={CX} cy={CY} r={CDR-9}   fill="#e49030" />
-        <Circle cx={CX} cy={CY} r={CDR-13}  fill="#f8c040" />
-        <Circle cx={CX} cy={CY} r={7}        fill="#f0a820" />
-        <Circle cx={CX} cy={CY} r={2.5}      fill="#111" />
-        <Circle cx={CX} cy={CY} r={CR} fill="rgba(255,255,255,0.04)" />
-        <Circle cx={CX} cy={CY} r={CR} fill="none" stroke={isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.12)'} strokeWidth="1.2" />
-        <Circle cx={BW-7} cy={7} r={3} fill={indicatorColor} />
-      </Svg>
-    );
-  }
-  if (playerStyleId === 'cassette') {
-    const WX=10,WY=12,WW=40,WH=22, R1X=WX+10,R2X=WX+WW-10,RY=WY+WH/2,RR=7;
-    return (
-      <Svg width={BW} height={BH}>
-        <SvgRect x={0} y={0} width={BW} height={BH} rx={8} fill={bodyFill} />
-        <SvgRect x={0} y={0} width={BW} height={BH} rx={8} fill="none" stroke={bodyStroke} strokeWidth="1" />
-        <SvgRect x={WX} y={WY} width={WW} height={WH} rx={4} fill={isDark ? '#0e0e18' : '#d0ccc8'} />
-        <Line x1={R1X+RR} y1={RY} x2={R2X-RR} y2={RY} stroke={isDark ? 'rgba(255,255,255,0.20)' : 'rgba(0,0,0,0.15)'} strokeWidth="1.2" />
-        {[R1X,R2X].map((rx,i) => (
-          <React.Fragment key={i}>
-            <Circle cx={rx} cy={RY} r={RR}   fill={isDark ? '#1e1a10' : '#b0a890'} />
-            <Circle cx={rx} cy={RY} r={RR-2} fill={isDark ? '#2a2418' : '#c8c0a8'} />
-            <Circle cx={rx} cy={RY} r={3}    fill={isDark ? '#444' : '#888'} />
-          </React.Fragment>
-        ))}
-        {[14,24,34,44].map((bx,i) => <SvgRect key={i} x={bx-4} y={BH-12} width={8} height={6} rx={2} fill={isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.12)'} />)}
-        <Circle cx={BW-8} cy={8} r={2.5} fill={indicatorColor} />
-      </Svg>
-    );
-  }
-  // radio
-  const KW=42, KH=26, KX=(BW-KW)/2, KY=10;
-  return (
-    <Svg width={BW} height={BH}>
-      <SvgRect x={0} y={0} width={BW} height={BH} rx={9} fill={bodyFill} />
-      <SvgRect x={0} y={0} width={BW} height={BH} rx={9} fill="none" stroke={bodyStroke} strokeWidth="1" />
-      <SvgRect x={KX} y={KY} width={KW} height={KH} rx={3} fill={isDark ? '#0a0a14' : '#c8c4bc'} />
-      {[0.25,0.5,0.75].map((f,i) => <Line key={i} x1={KX+KW*f} y1={KY+4} x2={KX+KW*f} y2={KY+KH-4} stroke={isDark ? 'rgba(255,255,255,0.20)' : 'rgba(0,0,0,0.16)'} strokeWidth="0.8" />)}
-      <Circle cx={BW/2} cy={BH-14} r={8} fill={isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.10)'} />
-      <Circle cx={BW/2} cy={BH-14} r={3} fill={isDark ? '#555' : '#888'} />
-      <Circle cx={BW-10} cy={8}    r={2.5} fill={indicatorColor} />
-    </Svg>
-  );
-}
-
-function VisitorShelfRow({ plankY, bottles, onTapBottle, shelfThemeId }: { plankY: number; bottles: string[]; onTapBottle?: (name: string) => void; shelfThemeId?: ShelfThemeId }) {
-  const isDark  = useIsDark();
-  const shelfW  = SCREEN_W - SHELF_MX * 2;
-  const scrollW = Math.max(shelfW, bottles.length * SLOT_W);
-  return (
-    <View style={{ position: 'absolute', top: plankY - BOTTLE_H, left: SHELF_MX, right: SHELF_MX, height: BOTTLE_H + PLANK_H + 6 }}>
-      <View style={{ position: 'absolute', top: BOTTLE_H - SHELF_OVERLAP, left: 0, right: 0 }}>
-        <WoodPlank shelfW={shelfW} shelfThemeId={shelfThemeId} />
+      {/* CD/Cassette/Radio player — user's chosen style, static (not interactive) */}
+      <View style={{ position: 'absolute', right: -62, top: Math.round(planks[0] + (planks[1] - planks[0]) / 2) - 90 }} pointerEvents="none">
+        <WallCDPlayer
+          playerStyleOverride={post.playerStyleId}
+          playerColorOverride={post.playerColorId}
+          staticMode
+        />
       </View>
-      <Svg width={shelfW} height={44} style={{ position: 'absolute', top: BOTTLE_H - SHELF_OVERLAP - 3, left: 0 }} pointerEvents="none">
-        <Defs>
-          <LinearGradient id="vLedG" x1="0.5" y1="0" x2="0.5" y2="1">
-            <Stop offset="0"    stopColor="#ffcc28" stopOpacity={isDark ? 0.62 : 0.26} />
-            <Stop offset="0.08" stopColor="#ff9010" stopOpacity={isDark ? 0.24 : 0.10} />
-            <Stop offset="0.40" stopColor="#ff6000" stopOpacity={isDark ? 0.08 : 0.03} />
-            <Stop offset="1"    stopColor="#ff3000" stopOpacity={0} />
-          </LinearGradient>
-        </Defs>
-        <SvgRect x={0} y={0} width={shelfW} height={44} fill="url(#vLedG)" />
-      </Svg>
-      <ScrollView
-        horizontal showsHorizontalScrollIndicator={false}
-        scrollEnabled={bottles.length * SLOT_W > shelfW}
-        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: BOTTLE_H }}
-        contentContainerStyle={{ width: scrollW, height: BOTTLE_H, flexDirection: 'row', alignItems: 'flex-end' }}
-      >
-        {bottles.map((name, i) => {
-          const imgH = Math.round(BOTTLE_H * BOTTLE_VSCALE[i % BOTTLE_VSCALE.length]);
-          return (
-            <TouchableOpacity
-              key={`v_${name}_${i}`}
-              onPress={() => onTapBottle?.(name)}
-              activeOpacity={0.75}
-              style={{ width: SLOT_W, height: BOTTLE_H }}
-            >
-              <ExpoImage
-                source={{ uri: `https://www.thecocktaildb.com/images/ingredients/${encodeURIComponent(name)}-Medium.png` }}
-                style={{ position: 'absolute', bottom: 0, alignSelf: 'center', width: BOTTLE_W, height: imgH }}
-                contentFit="contain"
-                transition={200}
-              />
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+
+      {/* Counter decor — reflects user's chosen counter theme */}
+      <BarCounterDecor counterThemeId={post.counterThemeId} />
     </View>
   );
 }
@@ -7002,173 +7867,418 @@ function VisitorBarModal({ post, visible, onClose }: {
   const C      = useColors();
   const isDark = useIsDark();
   const { lang, savedBarIds, toggleSavedBar } = useAppStore();
-  const [cabH, setCabH] = useState(0);
-  const [focusedBottle, setFocusedBottle] = useState<string | null>(null);
-  const [visitorPlaying, setVisitorPlaying] = useState(false);
+  const styles = useStyles();
+  const t      = TEXTS[lang];
+  const [view,                   setView]                   = useState<'mybar' | 'shelf' | 'dna'>('mybar');
+  const [shelfFilter,            setShelfFilter]            = useState<'all' | 'spirits' | 'recipes'>('all');
+  const [selectedSpirit,         setSelectedSpirit]         = useState<SearchSpirit | null>(null);
+  const [selectedMyBarRecord,    setSelectedMyBarRecord]    = useState<SpiritRecord | null>(null);
+  const [selectedVisitorRecipe,  setSelectedVisitorRecipe]  = useState<Recipe | null>(null);
 
-  const shelfPlanks = useMemo(() => SHELF_FRACS.map(f => Math.round(cabH * f)), [cabH]);
+  // ── All hooks must come before any conditional return ──
+  const spiritEntries = useMemo(() => Object.entries(post?.spiritRecords ?? {}), [post?.id]);
+
+  const genome = useMemo(() => {
+    const weighted = spiritEntries.filter(([, r]) => r.rating > 0);
+    if (!weighted.length) return null;
+    const total = weighted.reduce((s, [, r]) => s + r.rating, 0);
+    const keys: (keyof FlavorP)[] = ['sweet', 'sour', 'bitter', 'body', 'aroma'];
+    return Object.fromEntries(
+      keys.map(k => [k, weighted.reduce((s, [, r]) => s + r.profile[k] * r.rating, 0) / total])
+    ) as FlavorP;
+  }, [spiritEntries]);
+
+  const barRecipes = useMemo(() => {
+    if (!post) return [] as Recipe[];
+    return RECIPE_FEED_POSTS
+      .filter(p => p.barPostId === post.id)
+      .map(p => ALL_RECIPES.find(r => r.id === p.recipeId))
+      .filter((r): r is Recipe => r !== undefined);
+  }, [post?.id]);
 
   useEffect(() => {
     if (!visible) {
-      setCabH(0);
-      setFocusedBottle(null);
-      setVisitorPlaying(false);
-      _visitorAudioUnload();
+      setView('mybar');
+      setShelfFilter('all');
+      setSelectedSpirit(null);
+      setSelectedMyBarRecord(null);
+      setSelectedVisitorRecipe(null);
     }
   }, [visible]);
 
-  const handlePlayerPress = async () => {
+  const handleBottlePress = useCallback((apiName: string) => {
     if (!post) return;
-    if (visitorPlaying) {
-      await _visitorAudioPause();
-      setVisitorPlaying(false);
-    } else {
-      const ok = await _visitorAudioStart(post.bgmUrl);
-      setVisitorPlaying(ok);
-    }
-  };
+    const spirit = SEARCH_SPIRITS.find(s => s.apiName === apiName || s.name === apiName);
+    const record = post.spiritRecords?.[apiName] ?? null;
+    if (spirit) { setSelectedSpirit(spirit); setSelectedMyBarRecord(record); }
+  }, [post]);
 
   if (!post) return null;
 
   const displayName = lang === 'ko' ? post.barNameKo : post.barName;
-  const userName    = lang === 'ko' ? post.userNameKo : post.userName;
   const hearted     = savedBarIds.includes(post.id);
+  const neon        = post.neonColor;
+  const spiritCount = spiritEntries.length;
+  const recipeCount = RECIPE_FEED_POSTS.filter(p => p.barPostId === post.id).length;
+  const insight     = genome ? genomeInsightText(genome, lang) : '';
 
-  const PANEL_H = Math.round(SH * 0.86);
+  const TABS: Array<{ id: 'mybar' | 'shelf' | 'dna'; ko: string; en: string }> = [
+    { id: 'mybar', ko: '마이 바',  en: 'My Bar' },
+    { id: 'shelf', ko: '진열장',   en: 'Shelf' },
+    { id: 'dna',   ko: '시그니처', en: 'Signature' },
+  ];
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+    <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: C.bg }}>
 
-        {/* Dim backdrop — tap to close */}
-        <TouchableOpacity
-          style={{ ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.52)' }}
-          onPress={onClose}
-          activeOpacity={1}
-        />
-
-        {/* Panel */}
+        {/* ── Top bar ── */}
         <View style={{
-          height: PANEL_H,
-          backgroundColor: C.bg,
-          borderTopLeftRadius: 20,
-          borderTopRightRadius: 20,
-          overflow: 'hidden',
+          flexDirection: 'row', alignItems: 'center',
+          paddingHorizontal: 14, paddingTop: Platform.OS === 'ios' ? 56 : 20, paddingBottom: 10,
+          borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.border,
         }}>
-          {/* Drag handle */}
-          <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 4 }}>
-            <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.14)' }} />
-          </View>
-
-          {/* ── Header ── */}
-          <View style={{
-            flexDirection: 'row', alignItems: 'center',
-            paddingHorizontal: 14, paddingTop: 6, paddingBottom: 10,
-            borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.border,
-          }}>
-            {/* Close button — large touch target */}
-            <TouchableOpacity
-              onPress={onClose}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 8 }}
-              style={{ paddingRight: 12, paddingVertical: 10, paddingLeft: 2 }}
-            >
-              <Svg width={22} height={22} viewBox="0 0 22 22" fill="none">
-                <Line x1={5} y1={5} x2={17} y2={17} stroke={C.text} strokeWidth={2} strokeLinecap="round" />
-                <Line x1={17} y1={5} x2={5} y2={17} stroke={C.text} strokeWidth={2} strokeLinecap="round" />
-              </Svg>
-            </TouchableOpacity>
-
-            {/* Avatar */}
-            <Svg width={34} height={34} viewBox="0 0 34 34">
-              <Defs>
-                <LinearGradient id="vbFsAv" x1="0" y1="0" x2="0" y2="1">
-                  <Stop offset="0" stopColor={post.c1} />
-                  <Stop offset="1" stopColor={post.c2} />
-                </LinearGradient>
-              </Defs>
-              <Circle cx="17" cy="17" r="17" fill="url(#vbFsAv)" />
-              <SvgText x="17" y="22" textAnchor="middle" fontSize="11" fontWeight="700" fill="rgba(255,255,255,0.92)">
-                {post.initials}
-              </SvgText>
+          <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={{ padding: 4 }}>
+            <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+              <Path d="M19 12H5M5 12L12 19M5 12L12 5" stroke={C.text} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
             </Svg>
+          </TouchableOpacity>
+          <Text style={{ flex: 1, textAlign: 'center', fontSize: 15, fontWeight: '800', color: C.text, marginHorizontal: 8 }} numberOfLines={1}>
+            {displayName}
+          </Text>
+          <View style={{ width: 30 }} />
+        </View>
 
-            {/* Name / followers */}
-            <View style={{ flex: 1, marginLeft: 10 }}>
-              <Text style={{ color: C.text, fontSize: 15, fontWeight: '800', letterSpacing: -0.2 }} numberOfLines={1}>
-                {displayName}
-              </Text>
-              <Text style={{ color: C.textDim, fontSize: 11, marginTop: 1 }}>
-                {userName} · {post.followers} {lang === 'ko' ? '팔로워' : 'followers'}
-              </Text>
+          {/* ── Profile header ── */}
+          <View style={{ paddingHorizontal: 18, paddingTop: 20, paddingBottom: 6 }}>
+
+            {/* Avatar + stats */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
+              <View style={{ marginRight: 24, width: 100, height: 100 }}>
+                <Svg width={100} height={100} viewBox="0 0 100 100">
+                  <Defs>
+                    <LinearGradient id={`vbAv_${post.id}`} x1="0" y1="0" x2="0" y2="1">
+                      <Stop offset="0" stopColor={post.c1} />
+                      <Stop offset="1" stopColor={post.c2} />
+                    </LinearGradient>
+                    <LinearGradient id={`vbAvBg_${post.id}`} x1="0" y1="1" x2="1" y2="0">
+                      <Stop offset="0" stopColor={neon} stopOpacity={0.22} />
+                      <Stop offset="1" stopColor={neon} stopOpacity={0.07} />
+                    </LinearGradient>
+                  </Defs>
+                  <Circle cx="50" cy="50" r="44" fill={neon} opacity={0.03} />
+                  <Circle cx="50" cy="50" r="43" fill={neon} opacity={0.06} />
+                  <Circle cx="50" cy="50" r="42" fill={neon} opacity={0.09} />
+                  <Circle cx="50" cy="50" r="41" fill={neon} opacity={0.14} />
+                  <Circle cx="50" cy="50" r="40" fill={neon} opacity={0.42} />
+                  <Circle cx="50" cy="50" r="39" fill={neon} />
+                  <Circle cx="50" cy="50" r="35" fill={C.bg} />
+                  {post.profileAvatarIdx == null ? (
+                    <>
+                      <Circle cx="50" cy="50" r="33" fill={`url(#vbAv_${post.id})`} />
+                      <SvgText x="50" y="56" textAnchor="middle" fontSize="20" fontWeight="800" fill="rgba(255,255,255,0.95)">
+                        {post.initials}
+                      </SvgText>
+                    </>
+                  ) : (
+                    <Circle cx="50" cy="50" r="33" fill={`url(#vbAvBg_${post.id})`} />
+                  )}
+                </Svg>
+                {post.profileAvatarIdx != null && (
+                  <View style={{ position: 'absolute', top: 0, left: 0, width: 100, height: 100, alignItems: 'center', justifyContent: 'center' }}>
+                    <ProfileAvatarIcon idx={post.profileAvatarIdx} size={52} />
+                  </View>
+                )}
+              </View>
+              <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-around' }}>
+                <View style={{ alignItems: 'center' }}>
+                  <Text style={{ fontSize: 18, fontWeight: '800', color: C.text }}>{spiritCount}</Text>
+                  <Text style={{ fontSize: 11, color: C.textDim, marginTop: 1 }}>{lang === 'ko' ? '보관중' : 'Cellar'}</Text>
+                </View>
+                <View style={{ alignItems: 'center' }}>
+                  <Text style={{ fontSize: 18, fontWeight: '800', color: C.text }}>{recipeCount}</Text>
+                  <Text style={{ fontSize: 11, color: C.textDim, marginTop: 1 }}>{lang === 'ko' ? '레시피' : 'Recipes'}</Text>
+                </View>
+                <View style={{ alignItems: 'center' }}>
+                  <Text style={{ fontSize: 18, fontWeight: '800', color: C.text }}>{post.followers}</Text>
+                  <Text style={{ fontSize: 11, color: C.textDim, marginTop: 1 }}>♥</Text>
+                </View>
+              </View>
             </View>
 
-            {/* Heart */}
-            <TouchableOpacity
-              onPress={() => toggleSavedBar(post.id)}
-              hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 8 }}
-            >
-              <Svg width={20} height={18} viewBox="0 0 16 15">
-                <Path d="M8 13.5 L2 8 Q-0.5 5 2.5 2 Q5.5 -0.5 8 3 Q10.5 -0.5 13.5 2 Q16.5 5 14 8 Z"
-                  fill={hearted ? '#e0055e' : 'none'}
-                  stroke={hearted ? '#e0055e' : C.textDim}
-                  strokeWidth={hearted ? 0 : 1.4}
-                />
-              </Svg>
-              <Text style={{ color: hearted ? '#e0055e' : C.textDim, fontSize: 12, fontWeight: '600' }}>
-                {post.likes + (hearted ? 1 : 0)}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* ── Bar cabinet ── */}
-          <View
-            style={{ flex: 1, overflow: 'hidden' }}
-            onLayout={(e) => { const h = e.nativeEvent.layout.height; if (h > 0) setCabH(h); }}
-          >
-            <VisitorBarWall barName={post.barName} neonColor={post.neonColor} wallThemeId={post.wallThemeId} />
-
-            {cabH > 0 && (
-              <>
-                <VisitorPendantLights cabH={cabH} lightColor={post.lightColor} />
-                <VisitorShelfRow plankY={shelfPlanks[0]} bottles={post.shelf0} onTapBottle={setFocusedBottle} shelfThemeId={post.shelfThemeId} />
-                <VisitorShelfRow plankY={shelfPlanks[1]} bottles={post.shelf1} onTapBottle={setFocusedBottle} shelfThemeId={post.shelfThemeId} />
-                <BarCounterDecor counterThemeId={post.counterThemeId} />
-                <TouchableOpacity
-                  onPress={handlePlayerPress}
-                  activeOpacity={0.7}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  style={{ position: 'absolute', right: 18, top: Math.round(shelfPlanks[0] + (shelfPlanks[1] - shelfPlanks[0]) / 2) - 50 }}
-                >
-                  <VisitorWallPlayer playerStyleId={post.playerStyleId} playerColorId={post.playerColorId} isPlaying={visitorPlaying} />
-                </TouchableOpacity>
-              </>
-            )}
-
-            {/* Spirits count badge */}
-            {cabH > 0 && (
-              <View style={{
-                position: 'absolute', bottom: 16, right: 16,
-                backgroundColor: isDark ? 'rgba(0,0,0,0.60)' : 'rgba(255,255,255,0.82)',
-                borderRadius: 10, paddingHorizontal: 11, paddingVertical: 6,
-                borderWidth: StyleSheet.hairlineWidth, borderColor: C.border,
-                flexDirection: 'row', alignItems: 'center', gap: 5,
-              }}>
-                <Text style={{ color: C.text, fontSize: 13, fontWeight: '800' }}>
-                  {post.shelf0.length + post.shelf1.length}
-                </Text>
-                <Text style={{ color: C.textDim, fontSize: 11 }}>
-                  {lang === 'ko' ? '종류' : 'spirits'}
-                </Text>
+            {/* Name + Heart button */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14, marginLeft: 4 }}>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={{ fontSize: 14, fontWeight: '800', color: C.text, marginBottom: 2 }}>{displayName}</Text>
+                <Text style={{ fontSize: 12, color: C.textDim }}>{post.likes + (hearted ? 1 : 0)} {lang === 'ko' ? '개의 좋아요' : 'likes'}</Text>
               </View>
-            )}
+              <TouchableOpacity
+                onPress={() => toggleSavedBar(post.id)}
+                activeOpacity={0.75}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 6,
+                  paddingVertical: 8, paddingHorizontal: 18,
+                  borderRadius: 10, borderWidth: 1,
+                  backgroundColor: hearted ? 'rgba(224,5,94,0.10)' : (isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)'),
+                  borderColor: hearted ? 'rgba(224,5,94,0.40)' : (isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)'),
+                }}
+              >
+                <Text style={{ fontSize: 14 }}>{hearted ? '♥' : '♡'}</Text>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: hearted ? '#e0055e' : C.text }}>
+                  {hearted ? (lang === 'ko' ? '하트 취소' : 'Unlike') : (lang === 'ko' ? '하트' : 'Like')}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Tab toggle */}
+            <View style={{ flexDirection: 'row', marginTop: 4 }}>
+              {TABS.map(tab => {
+                const active = view === tab.id;
+                return (
+                  <TouchableOpacity key={tab.id} onPress={() => setView(tab.id)} activeOpacity={0.7}
+                    style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderBottomWidth: active ? 2 : 1, borderBottomColor: active ? C.primary : C.border }}>
+                    <Text style={{ fontSize: 13, fontWeight: active ? '800' : '500', color: active ? C.text : C.textDim }}>
+                      {lang === 'ko' ? tab.ko : tab.en}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </View>
 
-          {/* Bottle detail panel */}
-          {focusedBottle && post && (
-            <VisitorBottlePanel name={focusedBottle} post={post} onClose={() => setFocusedBottle(null)} />
+          {/* ── Content ── */}
+          {view === 'mybar' ? (
+            <VisitorBarView post={post} onBottlePress={handleBottlePress} />
+          ) : (
+            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+              {view === 'shelf' ? (
+                <>
+                  {/* Filter chips */}
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 44, marginTop: 12, marginBottom: 4, paddingLeft: 18 }} contentContainerStyle={{ gap: 8, flexDirection: 'row', paddingRight: 18 }}>
+                    {([
+                      { id: 'all' as const,     ko: '전체',   en: 'All',     count: spiritEntries.length + barRecipes.length },
+                      { id: 'spirits' as const, ko: '주류',   en: 'Spirits', count: spiritEntries.length },
+                      { id: 'recipes' as const, ko: '레시피', en: 'Recipes', count: barRecipes.length },
+                    ]).map(f => {
+                      const active = shelfFilter === f.id;
+                      return (
+                        <TouchableOpacity key={f.id} onPress={() => setShelfFilter(f.id)}
+                          style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 13, paddingVertical: 6, borderRadius: 20, backgroundColor: active ? `${neon}28` : C.surfaceHi, borderWidth: 1, borderColor: active ? neon : C.border }}>
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: active ? neon : C.textDim }}>
+                            {lang === 'ko' ? f.ko : f.en}
+                          </Text>
+                          {f.count > 0 && (
+                            <View style={{ width: 16, height: 16, borderRadius: 8, backgroundColor: active ? `${neon}25` : `${neon}15`, alignItems: 'center', justifyContent: 'center' }}>
+                              <Text style={{ fontSize: 9, fontWeight: '800', color: active ? neon : C.textDim }}>{f.count}</Text>
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+
+                  {/* Spirits section */}
+                  {(shelfFilter === 'all' || shelfFilter === 'spirits') && (
+                    spiritEntries.length === 0 ? (
+                      shelfFilter === 'spirits' && (
+                        <View style={{ alignItems: 'center', paddingVertical: 36 }}>
+                          <Text style={{ fontSize: 28, marginBottom: 8 }}>🥃</Text>
+                          <Text style={{ fontSize: 13, color: C.textDim }}>{lang === 'ko' ? '진열된 주류가 없어요' : 'No spirits on shelf'}</Text>
+                        </View>
+                      )
+                    ) : (
+                      <>
+                        {shelfFilter === 'all' && (
+                          <Text style={{ fontSize: 11, fontWeight: '800', color: C.textDim, letterSpacing: 1.1, textTransform: 'uppercase', paddingHorizontal: 18, paddingTop: 8, paddingBottom: 10 }}>
+                            {lang === 'ko' ? `주류 (${spiritCount}종)` : `Spirits (${spiritCount})`}
+                          </Text>
+                        )}
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 1, backgroundColor: C.border }}>
+                          {spiritEntries.map(([apiName, record]) => (
+                            <VisitorSpiritCell
+                              key={apiName} apiName={apiName} record={record}
+                              onPress={() => {
+                                const s = SEARCH_SPIRITS.find(x => x.apiName === apiName || x.name === apiName);
+                                if (s) setSelectedSpirit(s);
+                              }}
+                            />
+                          ))}
+                        </View>
+                      </>
+                    )
+                  )}
+
+                  {/* Recipes section */}
+                  {(shelfFilter === 'all' || shelfFilter === 'recipes') && (
+                    barRecipes.length === 0 ? (
+                      shelfFilter === 'recipes' && (
+                        <View style={{ alignItems: 'center', paddingVertical: 36 }}>
+                          <Text style={{ fontSize: 28, marginBottom: 8 }}>🍹</Text>
+                          <Text style={{ fontSize: 13, color: C.textDim }}>{lang === 'ko' ? '저장된 레시피가 없어요' : 'No recipes yet'}</Text>
+                        </View>
+                      )
+                    ) : (
+                      <>
+                        {shelfFilter === 'all' && (
+                          <Text style={{ fontSize: 11, fontWeight: '800', color: C.textDim, letterSpacing: 1.1, textTransform: 'uppercase', paddingHorizontal: 18, paddingTop: 16, paddingBottom: 10 }}>
+                            {lang === 'ko' ? `레시피 (${barRecipes.length}개)` : `Recipes (${barRecipes.length})`}
+                          </Text>
+                        )}
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 1, backgroundColor: C.border }}>
+                          {barRecipes.map(recipe => (
+                            <RecipeGridCell
+                              key={recipe.id}
+                              recipe={recipe}
+                              lang={lang}
+                              onPress={() => setSelectedVisitorRecipe(recipe)}
+                            />
+                          ))}
+                        </View>
+                      </>
+                    )
+                  )}
+                </>
+          ) : (
+            /* ── 시그니처 탭 ── 이 유저의 시음 기록에서 분석한 취향 */
+            <View style={{ paddingBottom: 20 }}>
+              {/* 시그니처 분석 레이더 카드 */}
+              <View style={[styles.genomeCard, { borderColor: `${neon}45` }]}>
+                <Text style={styles.genomeSeclbl}>{lang === 'ko' ? '시그니처 분석' : 'SIGNATURE ANALYSIS'}</Text>
+                {genome ? (
+                  <>
+                    <RadarChart profile={genome} labels={t.radarLabels} size={200} color={neon} />
+                    <Text style={[styles.genomeInsight, { color: C.text }]}>{insight}</Text>
+                  </>
+                ) : (
+                  <View style={{ paddingVertical: 28, alignItems: 'center' }}>
+                    <Text style={{ fontSize: 32, marginBottom: 10 }}>🧬</Text>
+                    <Text style={{ fontSize: 13, color: C.textDim, textAlign: 'center', lineHeight: 19, paddingHorizontal: 16 }}>
+                      {lang === 'ko' ? '시음 기록이 없어 분석할 수 없어요' : 'No records to analyze yet'}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {/* 주요 취향 강점 */}
+              {genome && (() => {
+                const keys: (keyof FlavorP)[] = ['sweet', 'sour', 'bitter', 'body', 'aroma'];
+                const labelMap: Record<keyof FlavorP, { ko: string; en: string }> = {
+                  sweet:  { ko: '달콤함', en: 'Sweet' },
+                  sour:   { ko: '신맛',   en: 'Sour' },
+                  bitter: { ko: '쓴맛',   en: 'Bitter' },
+                  body:   { ko: '바디감', en: 'Body' },
+                  aroma:  { ko: '아로마', en: 'Aroma' },
+                };
+                const sorted = [...keys].sort((a, b) => genome[b] - genome[a]);
+                return (
+                  <View style={{ marginHorizontal: 20, marginBottom: 16 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: C.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 12 }}>
+                      {lang === 'ko' ? '취향 분포' : 'FLAVOR BREAKDOWN'}
+                    </Text>
+                    {sorted.map(k => {
+                      const val = genome[k];
+                      const pct = Math.round((val / 5) * 100);
+                      return (
+                        <View key={k} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                          <Text style={{ fontSize: 12, fontWeight: '600', color: C.text, width: 52 }}>
+                            {lang === 'ko' ? labelMap[k].ko : labelMap[k].en}
+                          </Text>
+                          <View style={{ flex: 1, height: 6, backgroundColor: C.surfaceHi, borderRadius: 3, overflow: 'hidden' }}>
+                            <View style={{ width: `${pct}%`, height: '100%', backgroundColor: neon, borderRadius: 3 }} />
+                          </View>
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: neon, width: 28, textAlign: 'right' }}>
+                            {val.toFixed(1)}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                );
+              })()}
+
+              {/* 기반 주류 개수 */}
+              {spiritCount > 0 && (
+                <View style={{ marginHorizontal: 20, paddingVertical: 12, paddingHorizontal: 16, backgroundColor: C.surfaceHi, borderRadius: 12, borderWidth: 1, borderColor: `${neon}30`, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Text style={{ fontSize: 20 }}>🥃</Text>
+                  <Text style={{ fontSize: 13, color: C.textDim, flex: 1, lineHeight: 18 }}>
+                    {lang === 'ko'
+                      ? `${spiritCount}종의 시음 기록을 바탕으로 분석했어요`
+                      : `Analyzed from ${spiritCount} spirit tasting records`}
+                  </Text>
+                </View>
+              )}
+
+              {/* ── 테이스팅 저널 ── */}
+              <Text style={{ fontSize: 11, fontWeight: '800', color: C.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginHorizontal: 20, marginTop: 20, marginBottom: 10 }}>
+                {lang === 'ko' ? '테이스팅 저널' : 'TASTING JOURNAL'}
+              </Text>
+              {spiritEntries.length === 0 ? (
+                <View style={{ marginHorizontal: 20, padding: 24, alignItems: 'center', backgroundColor: C.surfaceHi, borderRadius: 14, borderWidth: 1, borderColor: `${neon}45` }}>
+                  <Text style={{ fontSize: 26, marginBottom: 8 }}>📖</Text>
+                  <Text style={{ fontSize: 13, color: C.textDim, textAlign: 'center', lineHeight: 20 }}>
+                    {lang === 'ko' ? '기록된 시음 노트가 없어요' : 'No tasting notes yet'}
+                  </Text>
+                </View>
+              ) : (
+                spiritEntries.map(([apiName, record]) => {
+                  const note   = lang === 'ko' ? record.noteKo : record.noteEn;
+                  const tags   = genFlavorTags(record.profile, lang);
+                  const spirit = SEARCH_SPIRITS.find(x => x.apiName === apiName || x.name === apiName);
+                  return (
+                    <TouchableOpacity
+                      key={apiName}
+                      activeOpacity={0.82}
+                      onPress={() => { if (spirit) { setSelectedSpirit(spirit); setSelectedMyBarRecord(null); } }}
+                      style={[styles.journalCard, { borderColor: `${neon}40` }]}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                        <View style={{ width: 36, height: 52, backgroundColor: C.surfaceHi, borderRadius: 6, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }}>
+                          <ExpoImage
+                            source={{ uri: `https://www.thecocktaildb.com/images/ingredients/${encodeURIComponent(apiName)}-Medium.png` }}
+                            style={{ width: 30, height: 48 }}
+                            contentFit="contain"
+                          />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 15, fontWeight: '700', color: C.text, lineHeight: 20 }} numberOfLines={1}>{apiName}</Text>
+                          {spirit && (
+                            <Text style={{ fontSize: 11, color: C.textDim, marginTop: 1 }}>
+                              {lang === 'ko' ? spirit.typeLabelKo : spirit.typeLabel}
+                            </Text>
+                          )}
+                        </View>
+                        <View style={{ alignItems: 'flex-end' }}>
+                          <Text style={{ fontSize: 14, color: neon, letterSpacing: 1 }}>{'★'.repeat(record.rating)}</Text>
+                          <Text style={{ fontSize: 10, color: C.textDim, marginTop: 2 }}>{record.rating}.0 / 5</Text>
+                        </View>
+                      </View>
+                      {!!note && (
+                        <Text style={{ fontSize: 13, color: C.text, lineHeight: 19, fontStyle: 'italic', marginBottom: 8, paddingLeft: 48 }}>
+                          "{note}"
+                        </Text>
+                      )}
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, paddingLeft: 48 }}>
+                        {tags.map(tag => (
+                          <Text key={tag} style={[styles.journalTag, { color: neon, backgroundColor: `${neon}18` }]}>{tag}</Text>
+                        ))}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </View>
+              )}
+            </ScrollView>
           )}
-        </View>
+
+        <SpiritDetailModal
+          spirit={selectedSpirit}
+          visible={selectedSpirit !== null}
+          onClose={() => { setSelectedSpirit(null); setSelectedMyBarRecord(null); }}
+          visitorRecord={selectedMyBarRecord ?? undefined}
+          visitorBarName={lang === 'ko' ? post.barNameKo : post.barName}
+        />
+        <RecipeDetailModal recipe={selectedVisitorRecipe} visible={selectedVisitorRecipe !== null} onClose={() => setSelectedVisitorRecipe(null)} />
       </View>
     </Modal>
   );
@@ -7302,123 +8412,597 @@ function MiniBarPreview({ shelf0, shelf1, height, wallThemeId, neonColor, lightC
   );
 }
 
-function BarPostCard({ post, onPress }: { post: BarPost; onPress: (p: BarPost) => void }) {
-  const { lang, savedBarIds, toggleSavedBar } = useAppStore();
-  const C = useColors();
-  const [liked, setLiked] = useState(false);
-  const saved = savedBarIds.includes(post.id);
-  const imgH = post.cardH - 64;
+
+function SpiritFeedCard({ post, lang, showLikeCount, onPress, onProfilePress, onDelete, onEdit, onReport }: {
+  post: SpiritFeedPost; lang: 'ko' | 'en'; showLikeCount?: boolean;
+  onPress?: () => void; onProfilePress?: () => void; onDelete?: () => void; onEdit?: () => void; onReport?: () => void;
+}) {
+  const C      = useColors();
+  const isDark = useIsDark();
+  const { savedSpiritIds, toggleSavedSpirit, likedPostIds, toggleLikedPost } = useAppStore();
+  const isMyPost  = post.id.startsWith('pub_');
+  const menuBtnRef = useRef<View>(null);
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
+
+  const handleMenu = () => {
+    menuBtnRef.current?.measure((_fx, _fy, _w, h, px, py) => {
+      setMenuPos({ x: px, y: py + h + 4 });
+    });
+  };
+
+  const matchSpirit = SEARCH_SPIRITS.find(s => s.apiName === post.spiritName || s.name === post.spiritName);
+  const isSaved     = matchSpirit ? savedSpiritIds.includes(matchSpirit.id) : false;
+  const isLiked     = likedPostIds.includes(post.id);
+
+  const timeStr = post.minsAgo === 0
+    ? (lang === 'ko' ? '방금 전' : 'Just now')
+    : post.minsAgo < 60
+      ? (lang === 'ko' ? `${post.minsAgo}분 전` : `${post.minsAgo}m ago`)
+      : (lang === 'ko' ? `${Math.floor(post.minsAgo / 60)}시간 전` : `${Math.floor(post.minsAgo / 60)}h ago`);
+  const postType        = lang === 'ko' ? '테이스팅 노트' : 'Tasting Note';
+  const userName        = lang === 'ko' ? post.userNameKo : post.userName;
+  const note            = lang === 'ko' ? post.noteKo : post.noteEn;
+  const spiritDisplay   = lang === 'ko' ? (matchSpirit?.nameKo ?? post.spiritName) : post.spiritName;
+  const spiritTypeLabel = matchSpirit ? (lang === 'ko' ? matchSpirit.typeLabelKo : matchSpirit.typeLabel) : '';
+  const AV = 46;
+  const likeCount = post.saveCount + (isLiked ? 1 : 0);
+
   return (
-    <TouchableOpacity
-      activeOpacity={0.88}
-      onPress={() => onPress(post)}
-      style={{
-        backgroundColor: C.surface, borderRadius: 16,
-        borderWidth: 1, borderColor: C.border,
-        overflow: 'hidden', height: post.cardH, marginBottom: 8,
-        shadowColor: '#000', shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.12, shadowRadius: 8, elevation: 3,
-      }}
-    >
-      {/* Mini bar preview */}
-      <MiniBarPreview shelf0={post.shelf0} shelf1={post.shelf1} height={imgH} wallThemeId={post.wallThemeId} neonColor={post.neonColor} lightColor={post.lightColor} shelfThemeId={post.shelfThemeId} counterThemeId={post.counterThemeId} barName={post.barName} />
-
-      {/* Info footer */}
-      <View style={{ flex: 1, paddingHorizontal: 9, paddingTop: 7, paddingBottom: 6 }}>
-        {/* User row */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-          <Svg width={22} height={22} viewBox="0 0 22 22">
-            <Defs>
-              <LinearGradient id={`bpc_${post.id}`} x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0" stopColor={post.c1} />
-                <Stop offset="1" stopColor={post.c2} />
-              </LinearGradient>
-            </Defs>
-            <Circle cx="11" cy="11" r="11" fill={`url(#bpc_${post.id})`} />
-            <SvgText x="11" y="15" textAnchor="middle" fontSize="8" fontWeight="700" fill="rgba(255,255,255,0.92)">
-              {post.initials}
-            </SvgText>
-          </Svg>
-          <Text style={{ flex: 1, color: C.text, fontSize: 10, fontWeight: '700' }} numberOfLines={1}>
-            {lang === 'ko' ? post.barNameKo : post.barName}
-          </Text>
-        </View>
-
-        {/* Actions */}
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Text style={{ flex: 1, color: C.textDim, fontSize: 9 }}>
-            {lang === 'ko' ? post.userNameKo : post.userName}
-          </Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <TouchableOpacity
-              onPress={(e) => { e.stopPropagation(); setLiked(v => !v); }}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}
-            >
-              <Svg width={13} height={12} viewBox="0 0 14 14">
-                <Path d="M7 12 L2 7 Q0 4 2.5 2 Q5 0 7 3 Q9 0 11.5 2 Q14 4 12 7 Z"
-                  fill={liked ? '#e0055e' : 'none'}
-                  stroke={liked ? '#e0055e' : C.textDim}
-                  strokeWidth={liked ? 0 : 1.3}
-                />
+    <View style={{ backgroundColor: C.bg }}>
+      {/* ── Header ── */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 14, paddingBottom: 10, gap: 12 }}>
+        <TouchableOpacity onPress={onProfilePress} disabled={!onProfilePress} activeOpacity={0.7}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+          {post.profileAvatarIdx != null ? (
+            <View style={{ width: AV, height: AV }}>
+              <Svg width={AV} height={AV} viewBox={`0 0 ${AV} ${AV}`}>
+                <Defs>
+                  <LinearGradient id={`avBg_${post.id}`} x1="0" y1="1" x2="1" y2="0">
+                    <Stop offset="0" stopColor={post.neonColor} stopOpacity={0.22} />
+                    <Stop offset="1" stopColor={post.neonColor} stopOpacity={0.07} />
+                  </LinearGradient>
+                </Defs>
+                <Circle cx={AV / 2} cy={AV / 2} r={AV / 2 - 1}   fill={post.neonColor} opacity={0.03} />
+                <Circle cx={AV / 2} cy={AV / 2} r={AV / 2 - 1.5} fill={post.neonColor} opacity={0.06} />
+                <Circle cx={AV / 2} cy={AV / 2} r={AV / 2 - 2}   fill={post.neonColor} opacity={0.09} />
+                <Circle cx={AV / 2} cy={AV / 2} r={AV / 2 - 2.5} fill={post.neonColor} opacity={0.14} />
+                <Circle cx={AV / 2} cy={AV / 2} r={AV / 2 - 3}   fill={post.neonColor} opacity={0.42} />
+                <Circle cx={AV / 2} cy={AV / 2} r={AV / 2 - 4}   fill={post.neonColor} />
+                <Circle cx={AV / 2} cy={AV / 2} r={AV / 2 - 5.5} fill={C.bg} />
+                <Circle cx={AV / 2} cy={AV / 2} r={AV / 2 - 6.5} fill={`url(#avBg_${post.id})`} />
               </Svg>
-              <Text style={{ color: C.textDim, fontSize: 9 }}>{post.likes + (liked ? 1 : 0)}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={(e) => { e.stopPropagation(); toggleSavedBar(post.id); }}>
-              <Svg width={11} height={13} viewBox="0 0 13 14">
-                <Path d="M2 1 L11 1 L11 13 L6.5 10 L2 13 Z"
-                  fill={saved ? C.primary : 'none'}
-                  stroke={saved ? C.primary : C.textDim}
-                  strokeWidth={1.2} strokeLinejoin="round"
-                />
-              </Svg>
-            </TouchableOpacity>
+              <View style={{ position: 'absolute', top: 0, left: 0, width: AV, height: AV, alignItems: 'center', justifyContent: 'center' }}>
+                <ProfileAvatarIcon idx={post.profileAvatarIdx} size={Math.round(AV * 0.52)} />
+              </View>
+            </View>
+          ) : (
+            <Svg width={AV} height={AV} viewBox={`0 0 ${AV} ${AV}`}>
+              <Defs>
+                <LinearGradient id={`av_${post.id}`} x1="0" y1="0" x2="0" y2="1">
+                  <Stop offset="0" stopColor={post.c1} />
+                  <Stop offset="1" stopColor={post.c2} />
+                </LinearGradient>
+              </Defs>
+              <Circle cx={AV / 2} cy={AV / 2} r={AV / 2} fill={`url(#av_${post.id})`} />
+              <SvgText x={AV / 2} y={AV / 2 + 5} textAnchor="middle" fontSize="13" fontWeight="800" fill="rgba(255,255,255,0.95)">
+                {post.initials}
+              </SvgText>
+            </Svg>
+          )}
+          <View>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: C.text }}>{userName}</Text>
+            <Text style={{ fontSize: 12, color: C.textDim, marginTop: 2 }}>{postType} · {timeStr}</Text>
           </View>
+        </TouchableOpacity>
+        <View ref={menuBtnRef} collapsable={false}>
+          <TouchableOpacity onPress={handleMenu} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ padding: 4 }}>
+            <Text style={{ fontSize: 16, color: C.textDim, letterSpacing: 1.5 }}>···</Text>
+          </TouchableOpacity>
         </View>
       </View>
-    </TouchableOpacity>
+
+      {/* ── Card ── */}
+      <View style={{
+        marginHorizontal: 20, borderRadius: 12, borderWidth: 1, borderColor: C.border,
+        backgroundColor: C.surface, overflow: 'hidden',
+        shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: isDark ? 0.20 : 0.07, shadowRadius: 6, elevation: 2,
+      }}>
+        {/* Tappable content area */}
+        <TouchableOpacity activeOpacity={onPress ? 0.75 : 1} onPress={onPress} disabled={!onPress}>
+          {/* Bottle image */}
+          <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 6, backgroundColor: C.surfaceHi }}>
+            <ExpoImage
+              source={{ uri: `https://www.thecocktaildb.com/images/ingredients/${encodeURIComponent(post.spiritName)}-Medium.png` }}
+              style={{ width: 44, height: 64 }}
+              contentFit="contain"
+            />
+          </View>
+
+          {/* Info */}
+          <View style={{ paddingHorizontal: 14, paddingTop: 8, paddingBottom: 2 }}>
+            <Text style={{ fontSize: 14, fontWeight: '800', color: C.text, textAlign: 'center' }}>
+              {spiritDisplay}
+            </Text>
+            {!!spiritTypeLabel && (
+              <Text style={{ fontSize: 10, color: C.textDim, textAlign: 'center', marginTop: 2 }}>
+                {spiritTypeLabel}
+              </Text>
+            )}
+
+            {/* Stars */}
+            <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 2, marginTop: 5 }}>
+              {[1,2,3,4,5].map(i => (
+                <Text key={i} style={{ fontSize: 11, color: i <= post.rating ? '#f5a623' : (isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.14)') }}>★</Text>
+              ))}
+            </View>
+
+            {/* Quote */}
+            <View style={{ marginTop: 8, paddingHorizontal: 2 }}>
+              <Text style={{ fontSize: 14, color: C.textDim, lineHeight: 13, marginBottom: 1 }}>❝</Text>
+              <Text style={{ fontSize: 11, color: C.text, lineHeight: 17, textAlign: 'center', marginHorizontal: 2 }}>
+                {note}
+              </Text>
+              <Text style={{ fontSize: 14, color: C.textDim, lineHeight: 13, textAlign: 'right', marginTop: 1 }}>❞</Text>
+            </View>
+
+            {/* Like count — 인기순일 때만 표시 */}
+            {showLikeCount && (
+              <View style={{ alignItems: 'center', marginTop: 8, marginBottom: 8 }}>
+                <View style={{ paddingHorizontal: 12, paddingVertical: 4, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.045)', borderRadius: 20 }}>
+                  <Text style={{ fontSize: 10, color: C.textDim }}>
+                    {lang === 'ko' ? `${likeCount}명이 좋아해요` : `${likeCount} likes`}
+                  </Text>
+                </View>
+              </View>
+            )}
+            {!showLikeCount && <View style={{ height: 8 }} />}
+          </View>
+        </TouchableOpacity>
+
+        {/* Like / Save bar */}
+        <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: C.border }} />
+        <View style={{ flexDirection: 'row' }}>
+          <TouchableOpacity
+            onPress={() => toggleLikedPost(post.id)}
+            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 9 }}
+            activeOpacity={0.7}
+          >
+            <Svg width={13} height={13} viewBox="0 0 24 24" fill={isLiked ? '#ef4444' : 'none'}>
+              <Path d="M12 21C12 21 3 14.5 3 8.5C3 5.42 5.42 3 8.5 3C10.24 3 11.91 3.81 13 5.08C14.09 3.81 15.76 3 17.5 3C20.58 3 23 5.42 23 8.5C23 14.5 12 21 12 21Z"
+                stroke={isLiked ? '#ef4444' : C.textDim} strokeWidth={1.8} strokeLinejoin="round"
+              />
+            </Svg>
+            <Text style={{ fontSize: 11, color: isLiked ? '#ef4444' : C.textDim, fontWeight: isLiked ? '700' : '500' }}>
+              {lang === 'ko' ? `좋아요 ${likeCount}` : `${likeCount} likes`}
+            </Text>
+          </TouchableOpacity>
+          <View style={{ width: StyleSheet.hairlineWidth, backgroundColor: C.border }} />
+          <TouchableOpacity
+            onPress={() => matchSpirit && toggleSavedSpirit(matchSpirit.id)}
+            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 9 }}
+            activeOpacity={0.7}
+          >
+            <Svg width={11} height={13} viewBox="0 0 16 18">
+              <Path d="M2 1.5 L14 1.5 L14 16.5 L8 13 L2 16.5 Z"
+                fill={isSaved ? '#f5a623' : 'none'}
+                stroke={isSaved ? '#f5a623' : C.textDim}
+                strokeWidth={1.5} strokeLinejoin="round"
+              />
+            </Svg>
+            <Text style={{ fontSize: 11, color: isSaved ? '#f5a623' : C.textDim, fontWeight: isSaved ? '700' : '500' }}>
+              {lang === 'ko' ? (isSaved ? '저장됨' : '저장') : (isSaved ? 'Saved' : 'Save')}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <View style={{ height: 8 }} />
+
+      {/* ── Dropdown menu ── */}
+      <Modal visible={menuPos !== null} transparent animationType="none" onRequestClose={() => setMenuPos(null)}>
+        <TouchableWithoutFeedback onPress={() => setMenuPos(null)}>
+          <View style={{ flex: 1 }}>
+            <View style={{
+              position: 'absolute',
+              right: 16,
+              top: menuPos?.y ?? 0,
+              backgroundColor: isDark ? '#2C2C2E' : '#FFFFFF',
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.18,
+              shadowRadius: 10,
+              elevation: 10,
+              minWidth: 150,
+              overflow: 'hidden',
+            }}>
+              {isMyPost ? (
+                <>
+                  <TouchableOpacity
+                    onPress={() => { setMenuPos(null); onEdit?.(); }}
+                    style={{ paddingHorizontal: 18, paddingVertical: 13 }}
+                  >
+                    <Text style={{ fontSize: 14, color: isDark ? '#fff' : '#1C1C1E' }}>
+                      {lang === 'ko' ? '수정' : 'Edit'}
+                    </Text>
+                  </TouchableOpacity>
+                  <View style={{ height: 1, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }} />
+                  <TouchableOpacity
+                    onPress={() => { setMenuPos(null); onDelete?.(); }}
+                    style={{ paddingHorizontal: 18, paddingVertical: 13 }}
+                  >
+                    <Text style={{ fontSize: 14, color: '#EF4444' }}>
+                      {lang === 'ko' ? '삭제' : 'Delete'}
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <TouchableOpacity
+                  onPress={() => { setMenuPos(null); onReport?.(); }}
+                  style={{ paddingHorizontal: 18, paddingVertical: 13 }}
+                >
+                  <Text style={{ fontSize: 14, color: '#EF4444' }}>
+                    {lang === 'ko' ? '신고하기' : 'Report'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+    </View>
   );
 }
 
-function MasonrySection({ posts, onPressPost }: { posts: BarPost[]; onPressPost: (p: BarPost) => void }) {
-  const left  = posts.filter((_, i) => i % 2 === 0);
-  const right = posts.filter((_, i) => i % 2 === 1);
+function RecipeFeedCard({ post, lang, showLikeCount, onPress, onProfilePress, onDelete, onEdit, onReport }: {
+  post: RecipeFeedPost; lang: 'ko' | 'en'; showLikeCount?: boolean;
+  onPress?: () => void; onProfilePress?: () => void; onDelete?: () => void; onEdit?: () => void; onReport?: () => void;
+}) {
+  const C      = useColors();
+  const isDark = useIsDark();
+  const { savedRecipeIds, toggleSavedRecipe, likedPostIds, toggleLikedPost } = useAppStore();
+  const isMyPost   = post.id.startsWith('pub_');
+  const menuBtnRef = useRef<View>(null);
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
+
+  const handleMenu = () => {
+    menuBtnRef.current?.measure((_fx, _fy, _w, h, px, py) => {
+      setMenuPos({ x: px, y: py + h + 4 });
+    });
+  };
+
+  const isSaved  = savedRecipeIds.includes(post.recipeId);
+  const isLiked  = likedPostIds.includes(post.id);
+  const timeStr  = post.minsAgo < 60
+    ? (lang === 'ko' ? `${post.minsAgo}분 전` : `${post.minsAgo}m ago`)
+    : (lang === 'ko' ? `${Math.floor(post.minsAgo / 60)}시간 전` : `${Math.floor(post.minsAgo / 60)}h ago`);
+  const postType  = lang === 'ko' ? '레시피 하이라이트' : 'Recipe Highlight';
+  const userName  = lang === 'ko' ? post.userNameKo : post.userName;
+  const recipeName = lang === 'ko' ? post.nameKo : post.name;
+  const note      = lang === 'ko' ? post.descKo : post.descEn;
+  const catLabel  = lang === 'ko'
+    ? ({ cocktail:'칵테일', mocktail:'목테일', nonalcoholic:'무알콜', shot:'샷', other:'기타' } as Record<string,string>)[post.category] ?? post.category
+    : post.category;
+  const AV = 46;
+  const likeCount = post.saveCount + (isLiked ? 1 : 0);
+
   return (
-    <View style={{ flexDirection: 'row', gap: 8 }}>
-      <View style={{ flex: 1 }}>
-        {left.map(p => <BarPostCard key={p.id} post={p} onPress={onPressPost} />)}
+    <View style={{ backgroundColor: C.bg }}>
+      {/* ── Header ── */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 14, paddingBottom: 10, gap: 12 }}>
+        <TouchableOpacity onPress={onProfilePress} disabled={!onProfilePress} activeOpacity={0.7}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+          {post.profileAvatarIdx != null ? (
+            <View style={{ width: AV, height: AV }}>
+              <Svg width={AV} height={AV} viewBox={`0 0 ${AV} ${AV}`}>
+                <Defs>
+                  <LinearGradient id={`ravBg_${post.id}`} x1="0" y1="1" x2="1" y2="0">
+                    <Stop offset="0" stopColor={post.neonColor} stopOpacity={0.22} />
+                    <Stop offset="1" stopColor={post.neonColor} stopOpacity={0.07} />
+                  </LinearGradient>
+                </Defs>
+                <Circle cx={AV / 2} cy={AV / 2} r={AV / 2 - 1}   fill={post.neonColor} opacity={0.03} />
+                <Circle cx={AV / 2} cy={AV / 2} r={AV / 2 - 1.5} fill={post.neonColor} opacity={0.06} />
+                <Circle cx={AV / 2} cy={AV / 2} r={AV / 2 - 2}   fill={post.neonColor} opacity={0.09} />
+                <Circle cx={AV / 2} cy={AV / 2} r={AV / 2 - 2.5} fill={post.neonColor} opacity={0.14} />
+                <Circle cx={AV / 2} cy={AV / 2} r={AV / 2 - 3}   fill={post.neonColor} opacity={0.42} />
+                <Circle cx={AV / 2} cy={AV / 2} r={AV / 2 - 4}   fill={post.neonColor} />
+                <Circle cx={AV / 2} cy={AV / 2} r={AV / 2 - 5.5} fill={C.bg} />
+                <Circle cx={AV / 2} cy={AV / 2} r={AV / 2 - 6.5} fill={`url(#ravBg_${post.id})`} />
+              </Svg>
+              <View style={{ position: 'absolute', top: 0, left: 0, width: AV, height: AV, alignItems: 'center', justifyContent: 'center' }}>
+                <ProfileAvatarIcon idx={post.profileAvatarIdx} size={Math.round(AV * 0.52)} />
+              </View>
+            </View>
+          ) : (
+            <Svg width={AV} height={AV} viewBox={`0 0 ${AV} ${AV}`}>
+              <Defs>
+                <LinearGradient id={`rav_${post.id}`} x1="0" y1="0" x2="0" y2="1">
+                  <Stop offset="0" stopColor={post.c1} />
+                  <Stop offset="1" stopColor={post.c2} />
+                </LinearGradient>
+              </Defs>
+              <Circle cx={AV / 2} cy={AV / 2} r={AV / 2} fill={`url(#rav_${post.id})`} />
+              <SvgText x={AV / 2} y={AV / 2 + 5} textAnchor="middle" fontSize="13" fontWeight="800" fill="rgba(255,255,255,0.95)">
+                {post.initials}
+              </SvgText>
+            </Svg>
+          )}
+          <View>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: C.text }}>{userName}</Text>
+            <Text style={{ fontSize: 12, color: C.textDim, marginTop: 2 }}>{postType} · {timeStr}</Text>
+          </View>
+        </TouchableOpacity>
+        <View ref={menuBtnRef} collapsable={false}>
+          <TouchableOpacity onPress={handleMenu} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ padding: 4 }}>
+            <Text style={{ fontSize: 16, color: C.textDim, letterSpacing: 1.5 }}>···</Text>
+          </TouchableOpacity>
+        </View>
       </View>
-      <View style={{ flex: 1 }}>
-        {right.map(p => <BarPostCard key={p.id} post={p} onPress={onPressPost} />)}
+
+      {/* ── Card ── */}
+      <View style={{
+        marginHorizontal: 20, borderRadius: 12, borderWidth: 1, borderColor: C.border,
+        backgroundColor: C.surface, overflow: 'hidden',
+        shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: isDark ? 0.20 : 0.07, shadowRadius: 6, elevation: 2,
+      }}>
+        {/* Tappable content area */}
+        <TouchableOpacity activeOpacity={onPress ? 0.75 : 1} onPress={onPress} disabled={!onPress}>
+          {/* Recipe color hero + image */}
+          <View style={{ height: 72, backgroundColor: `${post.color}28`, alignItems: 'center', justifyContent: 'center' }}>
+            {post.simSnapshot ? (
+              <MiniGlassThumbnail snapshot={post.simSnapshot} width={44} height={64} />
+            ) : post.heroApiName ? (
+              <ExpoImage
+                source={{ uri: `https://www.thecocktaildb.com/images/ingredients/${encodeURIComponent(post.heroApiName)}-Medium.png` }}
+                style={{ width: 44, height: 64 }}
+                contentFit="contain"
+              />
+            ) : (
+              <Text style={{ fontSize: 32 }}>🍹</Text>
+            )}
+          </View>
+
+          {/* Info */}
+          <View style={{ paddingHorizontal: 14, paddingTop: 8, paddingBottom: 2 }}>
+            <Text style={{ fontSize: 14, fontWeight: '800', color: C.text, textAlign: 'center' }}>
+              {recipeName}
+            </Text>
+            {/* Category + ABV row */}
+            <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 5, marginTop: 4 }}>
+              <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 7, backgroundColor: `${post.color}20` }}>
+                <Text style={{ fontSize: 9, fontWeight: '700', color: post.color }}>{catLabel}</Text>
+              </View>
+              {post.abv != null && (
+                <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 7, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)' }}>
+                  <Text style={{ fontSize: 9, fontWeight: '600', color: C.textDim }}>{post.abv}% ABV</Text>
+                </View>
+              )}
+              <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 7, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)' }}>
+                <Text style={{ fontSize: 9, fontWeight: '600', color: C.textDim }}>{post.difficulty}</Text>
+              </View>
+            </View>
+
+            {/* Quote */}
+            <View style={{ marginTop: 8, paddingHorizontal: 2 }}>
+              <Text style={{ fontSize: 14, color: C.textDim, lineHeight: 13, marginBottom: 1 }}>❝</Text>
+              <Text style={{ fontSize: 11, color: C.text, lineHeight: 17, textAlign: 'center', marginHorizontal: 2 }}>
+                {note}
+              </Text>
+              <Text style={{ fontSize: 14, color: C.textDim, lineHeight: 13, textAlign: 'right', marginTop: 1 }}>❞</Text>
+            </View>
+
+            {/* Like count — 인기순일 때만 표시 */}
+            {showLikeCount && (
+              <View style={{ alignItems: 'center', marginTop: 8, marginBottom: 8 }}>
+                <View style={{ paddingHorizontal: 12, paddingVertical: 4, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.045)', borderRadius: 20 }}>
+                  <Text style={{ fontSize: 10, color: C.textDim }}>
+                    {lang === 'ko' ? `${likeCount}명이 좋아해요` : `${likeCount} likes`}
+                  </Text>
+                </View>
+              </View>
+            )}
+            {!showLikeCount && <View style={{ height: 8 }} />}
+          </View>
+        </TouchableOpacity>
+
+        {/* Like / Save bar */}
+        <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: C.border }} />
+        <View style={{ flexDirection: 'row' }}>
+          <TouchableOpacity
+            onPress={() => toggleLikedPost(post.id)}
+            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 9 }}
+            activeOpacity={0.7}
+          >
+            <Svg width={13} height={13} viewBox="0 0 24 24" fill={isLiked ? '#ef4444' : 'none'}>
+              <Path d="M12 21C12 21 3 14.5 3 8.5C3 5.42 5.42 3 8.5 3C10.24 3 11.91 3.81 13 5.08C14.09 3.81 15.76 3 17.5 3C20.58 3 23 5.42 23 8.5C23 14.5 12 21 12 21Z"
+                stroke={isLiked ? '#ef4444' : C.textDim} strokeWidth={1.8} strokeLinejoin="round"
+              />
+            </Svg>
+            <Text style={{ fontSize: 11, color: isLiked ? '#ef4444' : C.textDim, fontWeight: isLiked ? '700' : '500' }}>
+              {lang === 'ko' ? `좋아요 ${likeCount}` : `${likeCount} likes`}
+            </Text>
+          </TouchableOpacity>
+          <View style={{ width: StyleSheet.hairlineWidth, backgroundColor: C.border }} />
+          <TouchableOpacity
+            onPress={() => toggleSavedRecipe(post.recipeId)}
+            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 9 }}
+            activeOpacity={0.7}
+          >
+            <Svg width={11} height={13} viewBox="0 0 16 18">
+              <Path d="M2 1.5 L14 1.5 L14 16.5 L8 13 L2 16.5 Z"
+                fill={isSaved ? post.color : 'none'}
+                stroke={isSaved ? post.color : C.textDim}
+                strokeWidth={1.5} strokeLinejoin="round"
+              />
+            </Svg>
+            <Text style={{ fontSize: 11, color: isSaved ? post.color : C.textDim, fontWeight: isSaved ? '700' : '500' }}>
+              {lang === 'ko' ? (isSaved ? '저장됨' : '저장') : (isSaved ? 'Saved' : 'Save')}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
+
+      <View style={{ height: 8 }} />
+
+      {/* ── Dropdown menu ── */}
+      <Modal visible={menuPos !== null} transparent animationType="none" onRequestClose={() => setMenuPos(null)}>
+        <TouchableWithoutFeedback onPress={() => setMenuPos(null)}>
+          <View style={{ flex: 1 }}>
+            <View style={{
+              position: 'absolute',
+              right: 16,
+              top: menuPos?.y ?? 0,
+              backgroundColor: isDark ? '#2C2C2E' : '#FFFFFF',
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.18,
+              shadowRadius: 10,
+              elevation: 10,
+              minWidth: 150,
+              overflow: 'hidden',
+            }}>
+              {isMyPost ? (
+                <>
+                  <TouchableOpacity
+                    onPress={() => { setMenuPos(null); onEdit?.(); }}
+                    style={{ paddingHorizontal: 18, paddingVertical: 13 }}
+                  >
+                    <Text style={{ fontSize: 14, color: isDark ? '#fff' : '#1C1C1E' }}>
+                      {lang === 'ko' ? '수정' : 'Edit'}
+                    </Text>
+                  </TouchableOpacity>
+                  <View style={{ height: 1, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }} />
+                  <TouchableOpacity
+                    onPress={() => { setMenuPos(null); onDelete?.(); }}
+                    style={{ paddingHorizontal: 18, paddingVertical: 13 }}
+                  >
+                    <Text style={{ fontSize: 14, color: '#EF4444' }}>
+                      {lang === 'ko' ? '삭제' : 'Delete'}
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <TouchableOpacity
+                  onPress={() => { setMenuPos(null); onReport?.(); }}
+                  style={{ paddingHorizontal: 18, paddingVertical: 13 }}
+                >
+                  <Text style={{ fontSize: 14, color: '#EF4444' }}>
+                    {lang === 'ko' ? '신고하기' : 'Report'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
     </View>
   );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// AVATAR COLOR HELPER
+// ─────────────────────────────────────────────────────────────────
+function nameToAvatar(name: string): { initials: string; c1: string; c2: string } {
+  const PALETTES: [string, string][] = [
+    ['#6c63ff', '#a855f7'], ['#f59e0b', '#ef4444'],
+    ['#10b981', '#06b6d4'], ['#ec4899', '#f97316'],
+    ['#3b82f6', '#8b5cf6'], ['#14b8a6', '#22c55e'],
+  ];
+  const hash = name.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+  const [c1, c2] = PALETTES[hash % PALETTES.length];
+  const parts = name.trim().split(/\s+/);
+  const initials = parts.length >= 2
+    ? (parts[0][0] + parts[1][0]).toUpperCase()
+    : name.slice(0, 2).toUpperCase();
+  return { initials, c1, c2 };
 }
 
 function ExploreScreen() {
   const C    = useColors();
   const isDark = useIsDark();
-  const { lang } = useAppStore();
-  const [feedPosts,    setFeedPosts]    = useState<BarPost[]>(BAR_POSTS);
-  const [loading,      setLoading]      = useState(false);
-  const [refreshing,   setRefreshing]   = useState(false);
-  const [visitPost,    setVisitPost]    = useState<BarPost | null>(null);
-  const [searchQuery,  setSearchQuery]  = useState('');
-  const [searchFocused,setSearchFocused]= useState(false);
+  const { lang, inventoryItems, barName, barNeonColor, customRecipes, updateInventoryItem, updateCustomRecipe } = useAppStore();
+  const [feedPosts,      setFeedPosts]      = useState<ExploreFeedPost[]>(EXPLORE_FEED_POSTS);
+  const [loading,        setLoading]        = useState(false);
+  const [refreshing,     setRefreshing]     = useState(false);
+  const [searchQuery,    setSearchQuery]    = useState('');
+  const [searchFocused,  setSearchFocused]  = useState(false);
+  const [exploreFilter,  setExploreFilter]  = useState<ExploreFilter>('all');
+  const [exploreSort,    setExploreSort]    = useState<ExploreSort>('recent');
+  const [selectedSpirit, setSelectedSpirit] = useState<SearchSpirit | null>(null);
+  const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
+  const [editingItem,    setEditingItem]    = useState<{ id: string; note: string; rating: number } | null>(null);
+  const [editingRecipe,  setEditingRecipe]  = useState<{ id: string; name: string; desc: string } | null>(null);
+  const [visitPost,      setVisitPost]      = useState<BarPost | null>(null);
   const searchRef = useRef<TextInput>(null);
-  const batchRef  = useRef(1);
   const busyRef   = useRef(false);
+
+  const publicSpiritPosts = useMemo((): SpiritFeedPost[] => {
+    const av = nameToAvatar(barName || 'Me');
+    return inventoryItems
+      .filter(item => item.isPublic)
+      .map(item => ({
+        kind:       'spirit' as const,
+        id:         `pub_${item.id}`,
+        userName:   barName, userNameKo: barName,
+        initials:   av.initials, c1: av.c1, c2: av.c2,
+        followers:  '나의 기록',
+        neonColor:  barNeonColor,
+        spiritName: item.apiName,
+        rating:     item.myRating ?? 0,
+        noteEn:     item.myNote?.en ?? '',
+        noteKo:     item.myNote?.ko ?? '',
+        profile:    item.profile,
+        minsAgo:    item.publicSince ? Math.floor((Date.now() - item.publicSince) / 60000) : 0,
+        saveCount:  0,
+      }));
+  }, [inventoryItems, barName]);
+
+  const publicRecipePosts = useMemo((): RecipeFeedPost[] => {
+    const av = nameToAvatar(barName || 'Me');
+    return customRecipes
+      .filter(r => r.isPublic)
+      .map(r => ({
+        kind:       'recipe' as const,
+        id:         `pub_${r.id}`,
+        userName:   barName, userNameKo: barName,
+        initials:   av.initials, c1: av.c1, c2: av.c2,
+        followers:  '나의 기록',
+        recipeId:   r.id,
+        name:       r.name, nameKo: r.nameKo,
+        color:      r.color,
+        category:   r.category,
+        abv:        r.abv ?? null,
+        difficulty: r.difficulty,
+        descEn:     r.descEn, descKo: r.descKo,
+        heroApiName: r.heroApiName,
+        simSnapshot: r.simSnapshot,
+        minsAgo:    r.publicSince ? Math.floor((Date.now() - r.publicSince) / 60000) : 0,
+        saveCount:  0,
+      }));
+  }, [customRecipes, barName]);
 
   const loadMore = useCallback(() => {
     if (busyRef.current) return;
     busyRef.current = true;
     setLoading(true);
     setTimeout(() => {
-      const b = batchRef.current++;
-      const next = BAR_POSTS
-        .slice()
-        .sort(() => Math.random() - 0.5)
-        .map(p => ({ ...p, id: `${p.id}_${b}` }));
-      setFeedPosts(prev => [...prev, ...next]);
+      setFeedPosts(prev => {
+        const base = prev.length > 0 ? Math.max(...prev.map(p => p.minsAgo)) : 60;
+        const next = EXPLORE_FEED_POSTS.map((p, i) => ({
+          ...p,
+          id: `${p.id}_old${Date.now()}_${i}`,
+          minsAgo: base + (i + 1) * 10,
+        }));
+        return [...prev, ...next];
+      });
       setLoading(false);
       busyRef.current = false;
     }, 900);
@@ -7427,8 +9011,13 @@ function ExploreScreen() {
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     setTimeout(() => {
-      batchRef.current = 1;
-      setFeedPosts(BAR_POSTS.slice().sort(() => Math.random() - 0.5));
+      const fresh = EXPLORE_FEED_POSTS.map((p, i) => ({
+        ...p,
+        id: `${p.id}_new${Date.now()}`,
+        minsAgo: i * 2,
+      }));
+      setFeedPosts(fresh);
+      setExploreSort('recent');
       setRefreshing(false);
     }, 800);
   }, []);
@@ -7450,22 +9039,44 @@ function ExploreScreen() {
   const isSearching = q.length > 0;
 
   const displayPosts = useMemo(() => {
-    if (!isSearching) return feedPosts;
-    return BAR_POSTS.filter(p =>
-      p.barName.toLowerCase().includes(q) ||
-      p.barNameKo.includes(q) ||
-      p.userName.toLowerCase().includes(q) ||
-      p.userNameKo.includes(q) ||
-      p.shelf0.some(b => b.toLowerCase().includes(q)) ||
-      p.shelf1.some(b => b.toLowerCase().includes(q))
-    );
-  }, [q, isSearching, feedPosts]);
+    const merged = [...publicSpiritPosts, ...publicRecipePosts, ...(isSearching ? EXPLORE_FEED_POSTS : feedPosts)];
+    let base: ExploreFeedPost[];
+    if (exploreFilter === 'spirit') {
+      base = merged.filter(p => p.kind === 'spirit');
+    } else if (exploreFilter === 'recipe') {
+      base = merged.filter(p => p.kind === 'recipe');
+    } else {
+      base = merged;
+    }
+    if (isSearching) {
+      base = base.filter(p => {
+        const common =
+          p.userName.toLowerCase().includes(q) ||
+          p.userNameKo.includes(q);
+        if (p.kind === 'spirit') return common ||
+          p.spiritName.toLowerCase().includes(q) ||
+          p.noteEn.toLowerCase().includes(q) ||
+          p.noteKo.includes(q);
+        return common ||
+          p.name.toLowerCase().includes(q) ||
+          p.nameKo.includes(q) ||
+          p.descEn.toLowerCase().includes(q) ||
+          p.descKo.includes(q);
+      });
+    }
+    if (exploreSort === 'popular') {
+      base = [...base].sort((a, b) => b.saveCount - a.saveCount);
+    } else {
+      base = [...base].sort((a, b) => a.minsAgo - b.minsAgo);
+    }
+    return base;
+  }, [q, isSearching, feedPosts, exploreFilter, exploreSort, publicSpiritPosts, publicRecipePosts]);
 
   const inputBg    = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.055)';
   const inputBd    = searchFocused
     ? (isDark ? 'rgba(255,255,255,0.28)' : 'rgba(0,0,0,0.22)')
     : (isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.10)');
-  const placeholder = lang === 'ko' ? '바 이름, 유저, 술 검색…' : 'Search bars, users, spirits…';
+  const placeholder = lang === 'ko' ? '유저, 주류, 테이스팅 노트 검색…' : 'Search users, spirits, notes…';
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: C.bg }}>
@@ -7489,10 +9100,7 @@ function ExploreScreen() {
             onBlur={() => setSearchFocused(false)}
             placeholder={placeholder}
             placeholderTextColor={C.textDim}
-            style={{
-              flex: 1, color: C.text, fontSize: 14,
-              paddingVertical: 0,
-            }}
+            style={{ flex: 1, color: C.text, fontSize: 14, paddingVertical: 0 }}
             returnKeyType="search"
             clearButtonMode="never"
             autoCorrect={false}
@@ -7518,19 +9126,78 @@ function ExploreScreen() {
         </View>
       </View>
 
+      {/* Filter chips (scrollable) + sort chips (fixed right) */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingBottom: 8 }}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 14, gap: 8, flexDirection: 'row' }}
+          keyboardShouldPersistTaps="handled"
+        >
+          {(['all', 'spirit', 'recipe'] as ExploreFilter[]).map(f => {
+            const active = exploreFilter === f;
+            const label = f === 'all'
+              ? (lang === 'ko' ? '전체' : 'All')
+              : f === 'spirit'
+                ? (lang === 'ko' ? '테이스팅 노트' : 'Tasting Notes')
+                : (lang === 'ko' ? '레시피' : 'Recipes');
+            return (
+              <TouchableOpacity
+                key={f}
+                onPress={() => setExploreFilter(f)}
+                style={{
+                  paddingHorizontal: 14,
+                  paddingVertical: 6,
+                  borderRadius: 20,
+                  borderWidth: 1,
+                  backgroundColor: active
+                    ? (isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.10)')
+                    : 'transparent',
+                  borderColor: active
+                    ? (isDark ? 'rgba(255,255,255,0.38)' : 'rgba(0,0,0,0.30)')
+                    : (isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)'),
+                }}
+              >
+                <Text style={{
+                  fontSize: 13,
+                  fontWeight: active ? '700' : '500',
+                  color: active ? C.text : C.textDim,
+                }}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+        <View style={{ flexDirection: 'row', gap: 10, paddingRight: 14 }}>
+          {(['recent', 'popular'] as ExploreSort[]).map(s => {
+            const active = exploreSort === s;
+            const label = s === 'recent'
+              ? (lang === 'ko' ? '최신순' : 'Latest')
+              : (lang === 'ko' ? '인기순' : 'Popular');
+            return (
+              <TouchableOpacity key={s} onPress={() => setExploreSort(s)}>
+                <Text style={{
+                  fontSize: 12,
+                  fontWeight: active ? '700' : '500',
+                  color: active ? C.text : C.textDim,
+                }}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+
       <ScrollView
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={150}
         onScroll={!isSearching ? handleScroll : undefined}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingHorizontal: 8, paddingBottom: 24 }}
+        contentContainerStyle={{ paddingBottom: 24 }}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={C.primary}
-            colors={[C.primary]}
-          />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.primary} colors={[C.primary]} />
         }
       >
         {displayPosts.length === 0 && isSearching ? (
@@ -7550,11 +9217,65 @@ function ExploreScreen() {
         ) : (
           <>
             {isSearching && (
-              <Text style={{ color: C.textDim, fontSize: 11, fontWeight: '600', marginBottom: 10, marginLeft: 4 }}>
+              <Text style={{ color: C.textDim, fontSize: 11, fontWeight: '600', marginBottom: 10, marginLeft: 16 }}>
                 {lang === 'ko' ? `${displayPosts.length}개 결과` : `${displayPosts.length} result${displayPosts.length !== 1 ? 's' : ''}`}
               </Text>
             )}
-            <MasonrySection posts={displayPosts} onPressPost={setVisitPost} />
+            {displayPosts.map(post => {
+              const isOwn = post.id.startsWith('pub_');
+              if (post.kind === 'spirit') {
+                const itemId = isOwn ? post.id.replace('pub_', '') : '';
+                const item   = isOwn ? inventoryItems.find(x => x.id === itemId) : undefined;
+                return (
+                  <SpiritFeedCard
+                    key={post.id} post={post} lang={lang} showLikeCount={exploreSort === 'popular'}
+                    onPress={() => {
+                      const s = SEARCH_SPIRITS.find(x => x.apiName === post.spiritName || x.name === post.spiritName);
+                      if (s) setSelectedSpirit(s);
+                    }}
+                    onProfilePress={!isOwn && post.barPostId ? () => {
+                      const bp = BAR_POSTS.find(b => b.id === post.barPostId);
+                      if (bp) setVisitPost(bp);
+                    } : undefined}
+                    onDelete={isOwn ? () => updateInventoryItem(itemId, { isPublic: false }) : undefined}
+                    onEdit={isOwn && item ? () => setEditingItem({
+                      id: itemId,
+                      note: item.myNote?.ko ?? '',
+                      rating: item.myRating ?? 0,
+                    }) : undefined}
+                    onReport={!isOwn ? () => Alert.alert(
+                      lang === 'ko' ? '신고 완료' : 'Reported',
+                      lang === 'ko' ? '신고가 접수되었습니다.' : 'Your report has been submitted.'
+                    ) : undefined}
+                  />
+                );
+              }
+              const recipeId = isOwn ? post.recipeId : '';
+              const recipe   = isOwn ? customRecipes.find(x => x.id === recipeId) : undefined;
+              return (
+                <RecipeFeedCard
+                  key={post.id} post={post} lang={lang} showLikeCount={exploreSort === 'popular'}
+                  onPress={() => {
+                    const r = [...ALL_RECIPES, ...customRecipes].find(x => x.id === post.recipeId);
+                    if (r) setSelectedRecipe(r);
+                  }}
+                  onProfilePress={!isOwn && post.barPostId ? () => {
+                    const bp = BAR_POSTS.find(b => b.id === post.barPostId);
+                    if (bp) setVisitPost(bp);
+                  } : undefined}
+                  onDelete={isOwn ? () => updateCustomRecipe(recipeId, { isPublic: false }) : undefined}
+                  onEdit={isOwn && recipe ? () => setEditingRecipe({
+                    id: recipeId,
+                    name: recipe.nameKo,
+                    desc: recipe.descKo,
+                  }) : undefined}
+                  onReport={!isOwn ? () => Alert.alert(
+                    lang === 'ko' ? '신고 완료' : 'Reported',
+                    lang === 'ko' ? '신고가 접수되었습니다.' : 'Your report has been submitted.'
+                  ) : undefined}
+                />
+              );
+            })}
             {!isSearching && loading && (
               <View style={{ alignItems: 'center', paddingVertical: 20 }}>
                 <ActivityIndicator size="small" color={C.primary} />
@@ -7564,11 +9285,112 @@ function ExploreScreen() {
         )}
       </ScrollView>
 
-      <VisitorBarModal
-        post={visitPost}
-        visible={visitPost !== null}
-        onClose={() => setVisitPost(null)}
-      />
+      <SpiritDetailModal spirit={selectedSpirit} visible={selectedSpirit !== null} onClose={() => setSelectedSpirit(null)} />
+      <RecipeDetailModal recipe={selectedRecipe} visible={selectedRecipe !== null} onClose={() => setSelectedRecipe(null)} />
+      <VisitorBarModal post={visitPost} visible={visitPost !== null} onClose={() => setVisitPost(null)} />
+
+      {/* Spirit 수정 모달 */}
+      <Modal visible={editingItem !== null} transparent animationType="fade" onRequestClose={() => setEditingItem(null)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+          <View style={{ width: '100%', backgroundColor: C.surface, borderRadius: 16, padding: 24 }}>
+            <Text style={{ fontSize: 17, fontWeight: '700', color: C.text, marginBottom: 16 }}>
+              {lang === 'ko' ? '테이스팅 노트 수정' : 'Edit Tasting Note'}
+            </Text>
+            <Text style={{ fontSize: 13, color: C.textDim, marginBottom: 6 }}>{lang === 'ko' ? '노트' : 'Note'}</Text>
+            <TextInput
+              value={editingItem?.note ?? ''}
+              onChangeText={v => editingItem && setEditingItem({ ...editingItem, note: v })}
+              multiline
+              style={{
+                borderWidth: 1, borderColor: C.border, borderRadius: 10,
+                padding: 10, minHeight: 80, color: C.text,
+                textAlignVertical: 'top', fontSize: 14, marginBottom: 16,
+              }}
+              placeholderTextColor={C.textDim}
+              placeholder={lang === 'ko' ? '테이스팅 노트를 입력하세요' : 'Enter tasting note'}
+            />
+            <Text style={{ fontSize: 13, color: C.textDim, marginBottom: 8 }}>{lang === 'ko' ? '평점' : 'Rating'}</Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 24 }}>
+              {[1,2,3,4,5].map(n => (
+                <TouchableOpacity key={n} onPress={() => editingItem && setEditingItem({ ...editingItem, rating: n })}>
+                  <Text style={{ fontSize: 28, opacity: (editingItem?.rating ?? 0) >= n ? 1 : 0.25 }}>★</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TouchableOpacity onPress={() => setEditingItem(null)}
+                style={{ flex: 1, paddingVertical: 12, borderRadius: 10, borderWidth: 1, borderColor: C.border, alignItems: 'center' }}>
+                <Text style={{ color: C.textDim, fontWeight: '600' }}>{lang === 'ko' ? '취소' : 'Cancel'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  if (!editingItem) return;
+                  updateInventoryItem(editingItem.id, {
+                    myNote: { ko: editingItem.note, en: editingItem.note },
+                    myRating: editingItem.rating,
+                  });
+                  setEditingItem(null);
+                }}
+                style={{ flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: '#E8830A', alignItems: 'center' }}>
+                <Text style={{ color: '#fff', fontWeight: '700' }}>{lang === 'ko' ? '저장' : 'Save'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Recipe 수정 모달 */}
+      <Modal visible={editingRecipe !== null} transparent animationType="fade" onRequestClose={() => setEditingRecipe(null)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+          <View style={{ width: '100%', backgroundColor: C.surface, borderRadius: 16, padding: 24 }}>
+            <Text style={{ fontSize: 17, fontWeight: '700', color: C.text, marginBottom: 16 }}>
+              {lang === 'ko' ? '레시피 수정' : 'Edit Recipe'}
+            </Text>
+            <Text style={{ fontSize: 13, color: C.textDim, marginBottom: 6 }}>{lang === 'ko' ? '이름' : 'Name'}</Text>
+            <TextInput
+              value={editingRecipe?.name ?? ''}
+              onChangeText={v => editingRecipe && setEditingRecipe({ ...editingRecipe, name: v })}
+              style={{
+                borderWidth: 1, borderColor: C.border, borderRadius: 10,
+                padding: 10, color: C.text, fontSize: 14, marginBottom: 16,
+              }}
+              placeholderTextColor={C.textDim}
+              placeholder={lang === 'ko' ? '레시피 이름' : 'Recipe name'}
+            />
+            <Text style={{ fontSize: 13, color: C.textDim, marginBottom: 6 }}>{lang === 'ko' ? '설명' : 'Description'}</Text>
+            <TextInput
+              value={editingRecipe?.desc ?? ''}
+              onChangeText={v => editingRecipe && setEditingRecipe({ ...editingRecipe, desc: v })}
+              multiline
+              style={{
+                borderWidth: 1, borderColor: C.border, borderRadius: 10,
+                padding: 10, minHeight: 80, color: C.text,
+                textAlignVertical: 'top', fontSize: 14, marginBottom: 24,
+              }}
+              placeholderTextColor={C.textDim}
+              placeholder={lang === 'ko' ? '레시피 설명' : 'Recipe description'}
+            />
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TouchableOpacity onPress={() => setEditingRecipe(null)}
+                style={{ flex: 1, paddingVertical: 12, borderRadius: 10, borderWidth: 1, borderColor: C.border, alignItems: 'center' }}>
+                <Text style={{ color: C.textDim, fontWeight: '600' }}>{lang === 'ko' ? '취소' : 'Cancel'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  if (!editingRecipe) return;
+                  updateCustomRecipe(editingRecipe.id, {
+                    nameKo: editingRecipe.name,
+                    descKo: editingRecipe.desc,
+                  });
+                  setEditingRecipe(null);
+                }}
+                style={{ flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: '#E8830A', alignItems: 'center' }}>
+                <Text style={{ color: '#fff', fontWeight: '700' }}>{lang === 'ko' ? '저장' : 'Save'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -7626,10 +9448,14 @@ function SaveBtn({ saved, onPress }: { saved: boolean; onPress: () => void }) {
   );
 }
 
-function SpiritDetailModal({ spirit, visible, onClose }: { spirit: SearchSpirit | null; visible: boolean; onClose: () => void }) {
+function SpiritDetailModal({ spirit, visible, onClose, visitorRecord, visitorBarName }: {
+  spirit: SearchSpirit | null; visible: boolean; onClose: () => void;
+  visitorRecord?: SpiritRecord;
+  visitorBarName?: string;
+}) {
   const C      = useColors();
   const isDark = useIsDark();
-  const { lang, savedSpiritIds, toggleSavedSpirit } = useAppStore();
+  const { lang, savedSpiritIds, toggleSavedSpirit, barNeonColor } = useAppStore();
   const t = TEXTS[lang];
 
   if (!spirit) return null;
@@ -7664,9 +9490,9 @@ function SpiritDetailModal({ spirit, visible, onClose }: { spirit: SearchSpirit 
             <Text style={{ flex: 1, fontSize: 16, fontWeight: '800', color: C.text }} numberOfLines={1}>{spirit.brand}</Text>
             <TouchableOpacity
               onPress={() => toggleSavedSpirit(spirit.id)}
-              style={{ backgroundColor: saved ? C.primary : C.surfaceHi, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6, borderWidth: 1, borderColor: saved ? C.primary : C.border }}
+              style={{ backgroundColor: saved ? barNeonColor : C.surfaceHi, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6, borderWidth: 1, borderColor: saved ? barNeonColor : `${barNeonColor}55` }}
             >
-              <Text style={{ fontSize: 12, fontWeight: '700', color: saved ? C.bg : C.textDim }}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: saved ? C.bg : barNeonColor }}>
                 {saved ? (lang === 'ko' ? '저장됨' : 'Saved') : (lang === 'ko' ? '저장' : 'Save')}
               </Text>
             </TouchableOpacity>
@@ -7676,16 +9502,13 @@ function SpiritDetailModal({ spirit, visible, onClose }: { spirit: SearchSpirit 
             {/* Bottle image + info */}
             <View style={{ flexDirection: 'row', gap: 16, marginBottom: 22 }}>
               <View style={{ width: 90, height: 130, borderRadius: 14, backgroundColor: C.surfaceHi, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                <ExpoImage
-                  source={{ uri: `https://www.thecocktaildb.com/images/ingredients/${encodeURIComponent(spirit.apiName)}-Medium.png` }}
-                  style={{ width: 70, height: 110 }} contentFit="contain"
-                />
+                <SpiritModalImage apiName={spirit.apiName} spiritType={spirit.spiritType} imgW={70} imgH={110} />
               </View>
               <View style={{ flex: 1, paddingTop: 2 }}>
                 <Text style={{ fontSize: 21, fontWeight: '800', color: C.text, marginBottom: 5, lineHeight: 26 }}>{spirit.brand}</Text>
                 <View style={{ flexDirection: 'row', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
-                  <View style={{ backgroundColor: `${C.primary}22`, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-                    <Text style={{ fontSize: 11, color: C.primary, fontWeight: '800' }}>{spirit.abv}% ABV</Text>
+                  <View style={{ backgroundColor: `${barNeonColor}22`, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                    <Text style={{ fontSize: 11, color: barNeonColor, fontWeight: '800' }}>{spirit.abv}% ABV</Text>
                   </View>
                 </View>
                 <Text style={{ fontSize: 13, fontWeight: '700', color: C.text, marginBottom: 2 }}>
@@ -7709,7 +9532,7 @@ function SpiritDetailModal({ spirit, visible, onClose }: { spirit: SearchSpirit 
               {t.flavorProfile}
             </Text>
             <View style={{ alignItems: 'center', marginBottom: 16 }}>
-              <RadarChart profile={spirit.profile} labels={t.radarLabels} size={196} />
+              <RadarChart profile={spirit.profile} labels={t.radarLabels} size={196} color={barNeonColor} />
             </View>
 
             {/* Flavor bars */}
@@ -7718,12 +9541,54 @@ function SpiritDetailModal({ spirit, visible, onClose }: { spirit: SearchSpirit 
                 <View key={key} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                   <Text style={{ fontSize: 11, color: C.textDim, width: 56 }}>{profileLabels[key]}</Text>
                   <View style={{ flex: 1, height: 5, borderRadius: 3, backgroundColor: C.surfaceHi, overflow: 'hidden' }}>
-                    <View style={{ width: `${val / 5 * 100}%`, height: '100%', borderRadius: 3, backgroundColor: C.primary }} />
+                    <View style={{ width: `${val / 5 * 100}%`, height: '100%', borderRadius: 3, backgroundColor: barNeonColor }} />
                   </View>
                   <Text style={{ fontSize: 11, color: C.textDim, width: 14, textAlign: 'right' }}>{val}</Text>
                 </View>
               ))}
             </View>
+
+            {/* 방문자 테이스팅 기록 */}
+            {visitorRecord && (
+              <View style={{ marginTop: 24, paddingTop: 20, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                  <View style={{ flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)' }} />
+                  <Text style={{ fontSize: 10, fontWeight: '800', color: C.textDim, letterSpacing: 1.1, textTransform: 'uppercase' }}>
+                    {visitorBarName ? `${visitorBarName}의 기록` : '바 주인의 기록'}
+                  </Text>
+                  <View style={{ flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)' }} />
+                </View>
+                <View style={{ backgroundColor: C.surfaceHi, borderRadius: 14, padding: 16, borderWidth: 1, borderColor: `${barNeonColor}30` }}>
+                  {/* 별점 */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                    <View style={{ flexDirection: 'row', gap: 2 }}>
+                      {[1,2,3,4,5].map(i => (
+                        <Text key={i} style={{ fontSize: 16, color: i <= visitorRecord.rating ? '#f5a623' : (isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.14)') }}>★</Text>
+                      ))}
+                    </View>
+                    <Text style={{ fontSize: 12, color: C.textDim, fontWeight: '600' }}>{visitorRecord.rating}.0 / 5</Text>
+                  </View>
+                  {/* 테이스팅 노트 */}
+                  {!!(lang === 'ko' ? visitorRecord.noteKo : visitorRecord.noteEn) && (
+                    <Text style={{ fontSize: 13, color: C.text, lineHeight: 20, fontStyle: 'italic', marginBottom: 12 }}>
+                      "{lang === 'ko' ? visitorRecord.noteKo : visitorRecord.noteEn}"
+                    </Text>
+                  )}
+                  {/* 플레이버 프로필 바 */}
+                  <View style={{ gap: 7 }}>
+                    {(Object.entries(visitorRecord.profile) as [keyof FlavorP, number][]).map(([key, val]) => (
+                      <View key={key} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                        <Text style={{ fontSize: 10, color: C.textDim, width: 48 }}>{profileLabels[key]}</Text>
+                        <View style={{ flex: 1, height: 4, borderRadius: 2, backgroundColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+                          <View style={{ width: `${val / 5 * 100}%`, height: '100%', borderRadius: 2, backgroundColor: barNeonColor, opacity: 0.75 }} />
+                        </View>
+                        <Text style={{ fontSize: 10, color: C.textDim, width: 12, textAlign: 'right' }}>{val}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              </View>
+            )}
           </ScrollView>
         </View>
       </View>
@@ -7734,7 +9599,7 @@ function SpiritDetailModal({ spirit, visible, onClose }: { spirit: SearchSpirit 
 function RecipeDetailModal({ recipe, visible, onClose }: { recipe: Recipe | null; visible: boolean; onClose: () => void }) {
   const C      = useColors();
   const isDark = useIsDark();
-  const { lang, savedRecipeIds, toggleSavedRecipe } = useAppStore();
+  const { lang, savedRecipeIds, toggleSavedRecipe, barNeonColor } = useAppStore();
   const [imgFailed, setImgFailed] = useState(false);
 
   useEffect(() => { if (visible) setImgFailed(false); }, [visible]);
@@ -7807,8 +9672,8 @@ function RecipeDetailModal({ recipe, visible, onClose }: { recipe: Recipe | null
                     <Text style={{ fontSize: 11, color: C.textDim, fontWeight: '600' }}>{recipe.prepMins} min</Text>
                   </View>
                   {recipe.abv != null && (
-                    <View style={{ backgroundColor: `${C.primary}20`, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-                      <Text style={{ fontSize: 11, color: C.primary, fontWeight: '700' }}>{recipe.abv}% ABV</Text>
+                    <View style={{ backgroundColor: `${barNeonColor}20`, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                      <Text style={{ fontSize: 11, color: barNeonColor, fontWeight: '700' }}>{recipe.abv}% ABV</Text>
                     </View>
                   )}
                 </View>
@@ -7857,12 +9722,12 @@ function RecipeDetailModal({ recipe, visible, onClose }: { recipe: Recipe | null
 }
 
 function SpiritCard({ spirit, lang, onPress }: { spirit: SearchSpirit; lang: Lang; onPress?: () => void }) {
-  const { savedSpiritIds, toggleSavedSpirit } = useAppStore();
+  const { savedSpiritIds, toggleSavedSpirit, barNeonColor } = useAppStore();
   const C = useColors();
   const saved = savedSpiritIds.includes(spirit.id);
   return (
     <TouchableOpacity activeOpacity={0.80} onPress={onPress} style={{ backgroundColor: C.surface, borderRadius: 14, borderWidth: 1, borderColor: C.border, padding: 12, marginBottom: 10, flexDirection: 'row', gap: 12, alignItems: 'center' }}>
-      <View style={{ width: 54, height: 76, borderRadius: 10, backgroundColor: C.surfaceHi, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+      <View style={{ width: 54, height: 76, borderRadius: 10, backgroundColor: `${barNeonColor}0e`, borderWidth: 1, borderColor: `${barNeonColor}28`, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
         <ExpoImage
           source={{ uri: `https://www.thecocktaildb.com/images/ingredients/${encodeURIComponent(spirit.apiName)}-Medium.png` }}
           style={{ width: 42, height: 62 }}
@@ -7872,8 +9737,8 @@ function SpiritCard({ spirit, lang, onPress }: { spirit: SearchSpirit; lang: Lan
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
           <Text style={{ fontSize: 15, fontWeight: '700', color: C.text }}>{spirit.brand}</Text>
-          <View style={{ backgroundColor: `${C.primary}20`, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 }}>
-            <Text style={{ fontSize: 10, color: C.primary, fontWeight: '700' }}>{spirit.abv}%</Text>
+          <View style={{ backgroundColor: `${barNeonColor}20`, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 }}>
+            <Text style={{ fontSize: 10, color: barNeonColor, fontWeight: '700' }}>{spirit.abv}%</Text>
           </View>
         </View>
         <Text style={{ fontSize: 11, color: C.textDim, marginBottom: 5 }}>
@@ -7881,14 +9746,14 @@ function SpiritCard({ spirit, lang, onPress }: { spirit: SearchSpirit; lang: Lan
         </Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
           {(lang === 'ko' ? spirit.tagsKo : spirit.tags).map(tag => (
-            <View key={tag} style={{ backgroundColor: C.surfaceHi, borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 }}>
+            <View key={tag} style={{ backgroundColor: `${barNeonColor}12`, borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 }}>
               <Text style={{ fontSize: 10, color: C.textDim }}>{tag}</Text>
             </View>
           ))}
         </View>
       </View>
       <View style={{ alignItems: 'center', gap: 6 }}>
-        <RadarChart profile={spirit.profile} labels={[]} size={46} />
+        <RadarChart profile={spirit.profile} labels={[]} size={46} color={barNeonColor} />
         <SaveBtn saved={saved} onPress={() => toggleSavedSpirit(spirit.id)} />
       </View>
     </TouchableOpacity>
@@ -7896,7 +9761,7 @@ function SpiritCard({ spirit, lang, onPress }: { spirit: SearchSpirit; lang: Lan
 }
 
 function SearchRecipeCard({ recipe, lang, onPress }: { recipe: Recipe; lang: Lang; onPress?: () => void }) {
-  const { savedRecipeIds, toggleSavedRecipe } = useAppStore();
+  const { savedRecipeIds, toggleSavedRecipe, barNeonColor } = useAppStore();
   const C = useColors();
   const saved = savedRecipeIds.includes(recipe.id);
   const diffColor = recipe.difficulty === 'Easy' ? '#22c55e' : recipe.difficulty === 'Medium' ? '#f59e0b' : '#ef4444';
@@ -7904,7 +9769,7 @@ function SearchRecipeCard({ recipe, lang, onPress }: { recipe: Recipe; lang: Lan
   const showImg = !!recipe.heroApiName && !imgFailed;
   return (
     <TouchableOpacity activeOpacity={0.80} onPress={onPress} style={{ backgroundColor: C.surface, borderRadius: 14, borderWidth: 1, borderColor: C.border, padding: 12, marginBottom: 10, flexDirection: 'row', gap: 12, alignItems: 'center' }}>
-      <View style={{ width: 54, height: 76, borderRadius: 10, backgroundColor: `${recipe.color}18`, borderWidth: 1, borderColor: `${recipe.color}30`, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+      <View style={{ width: 54, height: 76, borderRadius: 10, backgroundColor: `${recipe.color}15`, borderWidth: 1, borderColor: `${barNeonColor}28`, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
         {showImg ? (
           <ExpoImage
             source={{ uri: `https://www.thecocktaildb.com/images/ingredients/${recipe.heroApiName}-Medium.png` }}
@@ -7914,10 +9779,10 @@ function SearchRecipeCard({ recipe, lang, onPress }: { recipe: Recipe; lang: Lan
           />
         ) : (
           <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-            <Path d="M8 3C8 3 6 5 6 8C6 10 7 11 8 12C9 13 10 14 10 17H14C14 14 15 13 16 12C17 11 18 10 18 8C18 5 16 3 16 3H8Z" stroke={recipe.color} strokeWidth={1.4} strokeLinejoin="round"/>
-            <Line x1="10" y1="17" x2="10" y2="21" stroke={recipe.color} strokeWidth={1.4}/>
-            <Line x1="14" y1="17" x2="14" y2="21" stroke={recipe.color} strokeWidth={1.4}/>
-            <Line x1="8" y1="21" x2="16" y2="21" stroke={recipe.color} strokeWidth={1.4}/>
+            <Path d="M8 3C8 3 6 5 6 8C6 10 7 11 8 12C9 13 10 14 10 17H14C14 14 15 13 16 12C17 11 18 10 18 8C18 5 16 3 16 3H8Z" stroke={barNeonColor} strokeWidth={1.4} strokeLinejoin="round" strokeOpacity={0.7}/>
+            <Line x1="10" y1="17" x2="10" y2="21" stroke={barNeonColor} strokeWidth={1.4} strokeOpacity={0.7}/>
+            <Line x1="14" y1="17" x2="14" y2="21" stroke={barNeonColor} strokeWidth={1.4} strokeOpacity={0.7}/>
+            <Line x1="8" y1="21" x2="16" y2="21" stroke={barNeonColor} strokeWidth={1.4} strokeOpacity={0.7}/>
           </Svg>
         )}
       </View>
@@ -7929,7 +9794,12 @@ function SearchRecipeCard({ recipe, lang, onPress }: { recipe: Recipe; lang: Lan
           <View style={{ backgroundColor: `${diffColor}20`, borderRadius: 5, paddingHorizontal: 6, paddingVertical: 1 }}>
             <Text style={{ fontSize: 10, color: diffColor, fontWeight: '700' }}>{recipe.difficulty}</Text>
           </View>
-          <Text style={{ fontSize: 11, color: C.textDim }}>{recipe.prepMins} min{recipe.abv != null ? ` · ${recipe.abv}% ABV` : ''}</Text>
+          {recipe.abv != null && (
+            <View style={{ backgroundColor: `${barNeonColor}18`, borderRadius: 5, paddingHorizontal: 6, paddingVertical: 1 }}>
+              <Text style={{ fontSize: 10, color: barNeonColor, fontWeight: '700' }}>{recipe.abv}%</Text>
+            </View>
+          )}
+          <Text style={{ fontSize: 11, color: C.textDim }}>{recipe.prepMins} min</Text>
         </View>
         <Text style={{ fontSize: 11, color: C.textDim }} numberOfLines={1}>
           {recipe.ingredients.slice(0, 3).join(' · ')}
@@ -7942,6 +9812,7 @@ function SearchRecipeCard({ recipe, lang, onPress }: { recipe: Recipe; lang: Lan
 }
 
 function FlavorCard({ tag, lang, onPress }: { tag: typeof FLAVOR_TAGS[0]; lang: Lang; onPress: () => void }) {
+  const { barNeonColor } = useAppStore();
   const C = useColors();
   const matchedSpirits = SEARCH_SPIRITS.filter(s => tag.spiritTypes.includes(s.spiritType));
   return (
@@ -7949,7 +9820,7 @@ function FlavorCard({ tag, lang, onPress }: { tag: typeof FLAVOR_TAGS[0]; lang: 
       onPress={onPress}
       style={{ backgroundColor: C.surface, borderRadius: 14, borderWidth: 1, borderColor: C.border, padding: 14, marginBottom: 10, flexDirection: 'row', gap: 12, alignItems: 'center' }}
     >
-      <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: C.surfaceHi, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: `${barNeonColor}15`, borderWidth: 1, borderColor: `${barNeonColor}28`, alignItems: 'center', justifyContent: 'center' }}>
         <Text style={{ fontSize: 22 }}>{tag.icon}</Text>
       </View>
       <View style={{ flex: 1 }}>
@@ -7961,7 +9832,7 @@ function FlavorCard({ tag, lang, onPress }: { tag: typeof FLAVOR_TAGS[0]; lang: 
         </Text>
       </View>
       <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-        <Path d="M9 18L15 12L9 6" stroke={C.textDim} strokeWidth={1.5} strokeLinecap="round"/>
+        <Path d="M9 18L15 12L9 6" stroke={barNeonColor} strokeWidth={1.5} strokeLinecap="round" strokeOpacity={0.6}/>
       </Svg>
     </TouchableOpacity>
   );
@@ -8095,7 +9966,8 @@ function FlavorDetailModal({ tag, visible, onClose }: {
 }
 
 function SearchScreen() {
-  const { lang }   = useAppStore();
+  const { lang, barNeonColor, spiritViewCounts, incrementSpiritView, recipeViewCounts, incrementRecipeView } = useAppStore();
+  const isDark = useIsDark();
   const C          = useColors();
   const [query, setQuery]           = useState('');
   const [filter, setFilter]         = useState<SearchFilter>('all');
@@ -8108,6 +9980,40 @@ function SearchScreen() {
   const [selectedFlavor, setSelectedFlavor] = useState<typeof FLAVOR_TAGS[0] | null>(null);
 
   const q = query.trim().toLowerCase();
+
+  const popularRanked = useMemo(() => {
+    const totalViews = Object.values(spiritViewCounts).reduce((a, b) => a + b, 0);
+    if (totalViews === 0) {
+      const seed = new Date().toDateString();
+      let h = 0;
+      for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+      return [...SEARCH_SPIRITS]
+        .map((s, i) => ({ spirit: s, views: 0, k: (h ^ (i * 2654435761)) >>> 0 }))
+        .sort((a, b) => a.k - b.k)
+        .slice(0, 6);
+    }
+    return [...SEARCH_SPIRITS]
+      .map(s => ({ spirit: s, views: spiritViewCounts[s.id] ?? 0, k: 0 }))
+      .sort((a, b) => b.views - a.views || a.spirit.id.localeCompare(b.spirit.id))
+      .slice(0, 6);
+  }, [spiritViewCounts]);
+
+  const popularRecipesRanked = useMemo(() => {
+    const totalViews = Object.values(recipeViewCounts).reduce((a, b) => a + b, 0);
+    if (totalViews === 0) {
+      const seed = new Date().toDateString() + 'r';
+      let h = 0;
+      for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+      return [...ALL_RECIPES]
+        .map((r, i) => ({ recipe: r, views: 0, k: (h ^ (i * 2654435761)) >>> 0 }))
+        .sort((a, b) => a.k - b.k)
+        .slice(0, 6);
+    }
+    return [...ALL_RECIPES]
+      .map(r => ({ recipe: r, views: recipeViewCounts[r.id] ?? 0, k: 0 }))
+      .sort((a, b) => b.views - a.views || a.recipe.id.localeCompare(b.recipe.id))
+      .slice(0, 6);
+  }, [recipeViewCounts]);
 
   const onFocus = useCallback(() => {
     setFocused(true);
@@ -8126,7 +10032,7 @@ function SearchScreen() {
     Keyboard.dismiss();
   }, []);
 
-  const borderColor = focusAnim.interpolate({ inputRange: [0, 1], outputRange: [C.border, C.primary] });
+  const borderColor = focusAnim.interpolate({ inputRange: [0, 1], outputRange: [C.border, barNeonColor] });
 
   const matchedSpirits = useMemo<SearchSpirit[]>(() => {
     if (!q) return filter === 'spirits' ? SEARCH_SPIRITS : [];
@@ -8178,15 +10084,61 @@ function SearchScreen() {
     { id:'flavor',  label:'Flavor',  labelKo:'풍미'  },
   ];
 
+  const neonShadow = isDark ? {
+    shadowColor: barNeonColor, shadowOpacity: 0.35, shadowRadius: 8, shadowOffset: { width: 0, height: 0 }, elevation: 4,
+  } : {};
+
+  const SectionLabel = ({ children }: { children: string }) => (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+      <View style={{ width: 3, height: 14, borderRadius: 2, backgroundColor: barNeonColor }} />
+      <Text style={{ fontSize: 11, fontWeight: '800', color: C.textDim, letterSpacing: 1.2, textTransform: 'uppercase' }}>{children}</Text>
+    </View>
+  );
+
+  const filterIcon = (id: SearchFilter, active: boolean) => {
+    const stroke = active ? '#fff' : C.textDim;
+    const sw = 1.6;
+    if (id === 'all') return (
+      <Svg width={15} height={15} viewBox="0 0 24 24" fill="none">
+        <Circle cx="6" cy="6" r="2.8" fill={stroke} />
+        <Circle cx="18" cy="6" r="2.8" fill={stroke} />
+        <Circle cx="6" cy="18" r="2.8" fill={stroke} />
+        <Circle cx="18" cy="18" r="2.8" fill={stroke} />
+      </Svg>
+    );
+    if (id === 'spirits') return (
+      <Svg width={15} height={15} viewBox="0 0 24 24" fill="none">
+        <Path d="M9.5 3H14.5L13.5 7.5H10.5L9.5 3Z" stroke={stroke} strokeWidth={sw} strokeLinejoin="round"/>
+        <Path d="M10.5 7.5C10.5 7.5 8 11 8 15C8 18.5 9.8 21 12 21C14.2 21 16 18.5 16 15C16 11 13.5 7.5 13.5 7.5" stroke={stroke} strokeWidth={sw} strokeLinecap="round"/>
+      </Svg>
+    );
+    if (id === 'recipes') return (
+      <Svg width={15} height={15} viewBox="0 0 24 24" fill="none">
+        <Path d="M8 3C8 3 6 5 6 8C6 10 7 11 8 12C9 13 10 14 10 17H14C14 14 15 13 16 12C17 11 18 10 18 8C18 5 16 3 16 3H8Z" stroke={stroke} strokeWidth={sw} strokeLinejoin="round"/>
+        <Line x1="10" y1="17" x2="10" y2="21" stroke={stroke} strokeWidth={sw} strokeLinecap="round"/>
+        <Line x1="14" y1="17" x2="14" y2="21" stroke={stroke} strokeWidth={sw} strokeLinecap="round"/>
+        <Line x1="8" y1="21" x2="16" y2="21" stroke={stroke} strokeWidth={sw} strokeLinecap="round"/>
+      </Svg>
+    );
+    return (
+      <Svg width={15} height={15} viewBox="0 0 24 24" fill="none">
+        <Path d="M12 2L13.8 8.2L20.4 8.6L15.3 12.8L16.9 19.2L12 16L7.1 19.2L8.7 12.8L3.6 8.6L10.2 8.2L12 2Z" stroke={stroke} strokeWidth={sw} strokeLinejoin="round"/>
+      </Svg>
+    );
+  };
+
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: C.bg }}>
-      {/* Header */}
-      <View style={{ paddingHorizontal: 18, paddingTop: 14, paddingBottom: 10 }}>
+      {/* Header + Search */}
+      <View style={{ paddingHorizontal: 18, paddingTop: 14, paddingBottom: 0 }}>
         {/* Search bar */}
-        <Animated.View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: C.surfaceHi, borderRadius: 14, borderWidth: 1.5, borderColor, paddingHorizontal: 12, height: 46, gap: 8 }}>
+        <Animated.View style={[
+          { flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', borderRadius: 14, borderWidth: 1, borderColor, paddingHorizontal: 12, height: 44, gap: 8 },
+          focused && isDark ? { shadowColor: barNeonColor, shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 0 } } : {}
+        ]}>
           <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-            <Circle cx="11" cy="11" r="7" stroke={focused ? C.primary : C.textDim} strokeWidth={1.6}/>
-            <Path d="M17 17L21 21" stroke={focused ? C.primary : C.textDim} strokeWidth={1.6} strokeLinecap="round"/>
+            <Circle cx="11" cy="11" r="7" stroke={focused ? barNeonColor : C.textDim} strokeWidth={1.6}/>
+            <Path d="M17 17L21 21" stroke={focused ? barNeonColor : C.textDim} strokeWidth={1.6} strokeLinecap="round"/>
           </Svg>
           <TextInput
             ref={inputRef}
@@ -8203,115 +10155,264 @@ function SearchScreen() {
             autoCapitalize="none"
           />
           {query.length > 0 && (
-            <TouchableOpacity onPress={() => { setQuery(''); inputRef.current?.focus(); }}>
+            <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} onPress={() => { setQuery(''); inputRef.current?.focus(); }}>
               <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: C.textDim, alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ color: C.bg, fontSize: 11, fontWeight: '800', lineHeight: 18 }}>✕</Text>
+                <Text style={{ color: C.bg, fontSize: 10, fontWeight: '900', lineHeight: 18 }}>✕</Text>
               </View>
             </TouchableOpacity>
           )}
         </Animated.View>
       </View>
 
-      {/* Filter chips */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 40 }} contentContainerStyle={{ paddingHorizontal: 18, gap: 8, flexDirection: 'row' }}>
+      {/* Filter tabs — 4-column icon+label grid */}
+      <View style={{ paddingHorizontal: 18, paddingTop: 10, paddingBottom: 10, flexDirection: 'row', gap: 6 }}>
         {FILTERS.map(f => {
           const active = filter === f.id;
           return (
-            <TouchableOpacity key={f.id} onPress={() => setFilter(f.id)}
-              style={{ paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, backgroundColor: active ? C.primary : C.surfaceHi, borderWidth: 1, borderColor: active ? C.primary : C.border }}>
-              <Text style={{ fontSize: 12, fontWeight: '700', color: active ? C.bg : C.textDim }}>
+            <TouchableOpacity key={f.id} onPress={() => setFilter(f.id)} activeOpacity={0.75}
+              style={{ flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 11, gap: 3,
+                backgroundColor: active ? barNeonColor : C.surfaceHi,
+                borderWidth: 1,
+                borderColor: active ? barNeonColor : C.border,
+                ...(active && isDark ? { shadowColor: barNeonColor, shadowOpacity: 0.35, shadowRadius: 6, shadowOffset: { width: 0, height: 0 } } : {})
+              }}>
+              {filterIcon(f.id, active)}
+              <Text style={{ fontSize: 9, fontWeight: '700', color: active ? '#fff' : C.textDim, letterSpacing: 0.2 }}>
                 {lang === 'ko' ? f.labelKo : f.label}
               </Text>
             </TouchableOpacity>
           );
         })}
-      </ScrollView>
+      </View>
+
+      {/* Neon rule */}
+      <View style={{ height: 1, backgroundColor: `${barNeonColor}20`, marginHorizontal: 0 }} />
 
       {/* Results / Empty state */}
       <ScrollView
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 32 }}
+        contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 18, paddingBottom: 32 }}
       >
         {q === '' && filter === 'all' ? (
-          /* ── Empty: Recent searches ── */
+          /* ── Home: Recent + Popular ── */
           <>
-            <Text style={{ fontSize: 11, fontWeight: '800', color: C.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 12 }}>
-              {lang === 'ko' ? '최근 검색' : 'Recent Searches'}
-            </Text>
-            {recents.map(r => (
-              <TouchableOpacity key={r} onPress={() => { setQuery(r); }} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: C.border, gap: 10 }}>
-                <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
-                  <Path d="M3 12C3 7 7 3 12 3C17 3 21 7 21 12C21 17 17 21 12 21" stroke={C.textDim} strokeWidth={1.5} strokeLinecap="round"/>
-                  <Path d="M12 7V12L9 15" stroke={C.textDim} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
-                </Svg>
-                <Text style={{ flex: 1, fontSize: 14, color: C.text }}>{r}</Text>
-                <TouchableOpacity onPress={() => setRecents(prev => prev.filter(x => x !== r))}>
-                  <Text style={{ color: C.textDim, fontSize: 18, lineHeight: 20 }}>×</Text>
-                </TouchableOpacity>
-              </TouchableOpacity>
-            ))}
-
-            {/* Flavor browse */}
-            <Text style={{ fontSize: 11, fontWeight: '800', color: C.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginTop: 24, marginBottom: 12 }}>
-              {lang === 'ko' ? '풍미로 탐색' : 'Browse by Flavor'}
-            </Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-              {FLAVOR_TAGS.map(tag => (
-                <TouchableOpacity key={tag.id} onPress={() => setQuery(lang === 'ko' ? tag.labelKo : tag.label)}
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, backgroundColor: C.surfaceHi, borderWidth: 1, borderColor: C.border }}>
-                  <Text style={{ fontSize: 14 }}>{tag.icon}</Text>
-                  <Text style={{ fontSize: 12, color: C.text, fontWeight: '600' }}>{lang === 'ko' ? tag.labelKo : tag.label}</Text>
+            <SectionLabel>{lang === 'ko' ? '최근 검색' : 'Recent Searches'}</SectionLabel>
+            <View style={{ backgroundColor: C.surface, borderRadius: 14, borderWidth: 1, borderColor: C.border, marginBottom: 28, overflow: 'hidden' }}>
+              {recents.map((r, i) => (
+                <TouchableOpacity key={r} onPress={() => { setQuery(r); }} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 13, borderBottomWidth: i < recents.length - 1 ? 1 : 0, borderBottomColor: C.border, gap: 12 }}>
+                  <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+                    <Path d="M3 12C3 7 7 3 12 3C17 3 21 7 21 12C21 17 17 21 12 21" stroke={`${barNeonColor}90`} strokeWidth={1.5} strokeLinecap="round"/>
+                    <Path d="M12 7V12L9 15" stroke={`${barNeonColor}90`} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
+                  </Svg>
+                  <Text style={{ flex: 1, fontSize: 14, color: C.text, fontWeight: '500' }}>{r}</Text>
+                  <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} onPress={() => setRecents(prev => prev.filter(x => x !== r))}>
+                    <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: C.surfaceHi, alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ color: C.textDim, fontSize: 10, fontWeight: '800', lineHeight: 18 }}>✕</Text>
+                    </View>
+                  </TouchableOpacity>
                 </TouchableOpacity>
               ))}
+            </View>
+
+            {/* Today's Popular spirits — grid cell style */}
+            <View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14, gap: 8 }}>
+                <View style={{ width: 3, height: 14, borderRadius: 2, backgroundColor: barNeonColor }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: C.textDim, letterSpacing: 1.1, textTransform: 'uppercase' }}>
+                    {lang === 'ko' ? '인기 주류 랭킹' : 'Trending Spirits'}
+                  </Text>
+                  <Text style={{ fontSize: 10, color: C.textDim, marginTop: 1, opacity: 0.7 }}>
+                    {lang === 'ko' ? '탐색 횟수 기준 · 실시간 집계' : 'Real-time · by search count'}
+                  </Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#ef4444', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
+                  <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: 'rgba(255,255,255,0.85)' }} />
+                  <Text style={{ fontSize: 10, fontWeight: '900', color: '#fff', letterSpacing: 0.8 }}>LIVE</Text>
+                </View>
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingRight: 4 }}>
+                {popularRanked.map(({ spirit: s, views }, idx) => {
+                  const rankColor = idx === 0 ? '#f59e0b' : idx === 1 ? '#94a3b8' : idx === 2 ? '#c4783a' : 'rgba(255,255,255,0.5)';
+                  const isTop3 = idx < 3;
+                  const isFirst = idx === 0;
+                  const cardW = 120;
+                  const cardH = Math.floor(cardW * 1.35);
+                  const imgW  = Math.floor(cardW * 0.62);
+                  const imgH  = Math.floor(imgW * 2.1);
+                  return (
+                    <TouchableOpacity
+                      key={s.id}
+                      activeOpacity={0.82}
+                      onPress={() => { incrementSpiritView(s.id); setSelectedSpirit(s); }}
+                      style={[{ width: cardW, height: cardH, borderRadius: 14, overflow: 'hidden', backgroundColor: `${barNeonColor}14` }, isFirst ? neonShadow : {}]}
+                    >
+                      <ExpoImage
+                        source={{ uri: `https://www.thecocktaildb.com/images/ingredients/${encodeURIComponent(s.apiName)}-Medium.png` }}
+                        style={{ position: 'absolute', width: imgW, height: imgH, alignSelf: 'center', top: (cardH - imgH) * 0.18 }}
+                        contentFit="contain"
+                      />
+                      {/* rank badge */}
+                      <View style={{ position: 'absolute', top: 7, left: 7, width: 24, height: 24, borderRadius: 12, backgroundColor: isTop3 ? rankColor : 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ fontSize: 10, fontWeight: '900', color: '#fff' }}>{idx + 1}</Text>
+                      </View>
+                      {isTop3 && (
+                        <View style={{ position: 'absolute', top: 7, right: 7, backgroundColor: 'rgba(239,68,68,0.75)', borderRadius: 5, paddingHorizontal: 4, paddingVertical: 2 }}>
+                          <Text style={{ fontSize: 8, fontWeight: '900', color: '#fff' }}>HOT</Text>
+                        </View>
+                      )}
+                      {/* bottom overlay */}
+                      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.52)', paddingHorizontal: 7, paddingVertical: 6 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '800', color: '#fff' }} numberOfLines={1}>{s.brand}</Text>
+                        <Text style={{ fontSize: 8, color: 'rgba(255,255,255,0.65)', marginTop: 1 }} numberOfLines={1}>{lang === 'ko' ? s.typeLabelKo : s.typeLabel}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 }}>
+                          <View style={{ backgroundColor: isFirst ? barNeonColor : rankColor, borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 }}>
+                            <Text style={{ fontSize: 8, fontWeight: '800', color: '#fff' }}>{s.abv}%</Text>
+                          </View>
+                          {views > 0 && <Text style={{ fontSize: 8, color: 'rgba(255,255,255,0.5)' }}>{lang === 'ko' ? `${views}회` : `${views}v`}</Text>}
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            {/* Popular Recipes Ranking — grid cell style */}
+            <View style={{ marginTop: 28 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14, gap: 8 }}>
+                <View style={{ width: 3, height: 14, borderRadius: 2, backgroundColor: barNeonColor }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: C.textDim, letterSpacing: 1.1, textTransform: 'uppercase' }}>
+                    {lang === 'ko' ? '인기 레시피 랭킹' : 'Trending Recipes'}
+                  </Text>
+                  <Text style={{ fontSize: 10, color: C.textDim, marginTop: 1, opacity: 0.7 }}>
+                    {lang === 'ko' ? '탐색 횟수 기준 · 실시간 집계' : 'Real-time · by search count'}
+                  </Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#ef4444', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
+                  <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: 'rgba(255,255,255,0.85)' }} />
+                  <Text style={{ fontSize: 10, fontWeight: '900', color: '#fff', letterSpacing: 0.8 }}>LIVE</Text>
+                </View>
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingRight: 4 }}>
+                {popularRecipesRanked.map(({ recipe: r, views }, idx) => {
+                  const rankColor = idx === 0 ? '#f59e0b' : idx === 1 ? '#94a3b8' : idx === 2 ? '#c4783a' : 'rgba(255,255,255,0.5)';
+                  const isTop3 = idx < 3;
+                  const isFirst = idx === 0;
+                  const diffColor = r.difficulty === 'Easy' ? '#22c55e' : r.difficulty === 'Medium' ? '#f59e0b' : '#ef4444';
+                  const cardW = 120;
+                  const cardH = Math.floor(cardW * 1.35);
+                  const imgW  = Math.floor(cardW * 0.62);
+                  const imgH  = Math.floor(imgW * 2.1);
+                  return (
+                    <TouchableOpacity
+                      key={r.id}
+                      activeOpacity={0.82}
+                      onPress={() => { incrementRecipeView(r.id); setSelectedRecipe(r); }}
+                      style={[{ width: cardW, height: cardH, borderRadius: 14, overflow: 'hidden', backgroundColor: `${r.color}28` }, isFirst ? neonShadow : {}]}
+                    >
+                      {r.heroApiName ? (
+                        <ExpoImage
+                          source={{ uri: `https://www.thecocktaildb.com/images/ingredients/${encodeURIComponent(r.heroApiName)}-Medium.png` }}
+                          style={{ position: 'absolute', width: imgW, height: imgH, alignSelf: 'center', top: (cardH - imgH) * 0.18 }}
+                          contentFit="contain"
+                        />
+                      ) : (
+                        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
+                          <Text style={{ fontSize: 36 }}>🍹</Text>
+                        </View>
+                      )}
+                      {/* rank badge */}
+                      <View style={{ position: 'absolute', top: 7, left: 7, width: 24, height: 24, borderRadius: 12, backgroundColor: isTop3 ? rankColor : 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ fontSize: 10, fontWeight: '900', color: '#fff' }}>{idx + 1}</Text>
+                      </View>
+                      {isTop3 && (
+                        <View style={{ position: 'absolute', top: 7, right: 7, backgroundColor: 'rgba(239,68,68,0.75)', borderRadius: 5, paddingHorizontal: 4, paddingVertical: 2 }}>
+                          <Text style={{ fontSize: 8, fontWeight: '900', color: '#fff' }}>HOT</Text>
+                        </View>
+                      )}
+                      {/* bottom overlay */}
+                      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.52)', paddingHorizontal: 7, paddingVertical: 6 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '800', color: '#fff' }} numberOfLines={1}>{lang === 'ko' ? r.nameKo : r.name}</Text>
+                        <Text style={{ fontSize: 8, color: 'rgba(255,255,255,0.65)', marginTop: 1 }} numberOfLines={1}>{r.category}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 }}>
+                          <View style={{ backgroundColor: diffColor, borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 }}>
+                            <Text style={{ fontSize: 8, fontWeight: '800', color: '#fff' }}>{r.difficulty}</Text>
+                          </View>
+                          {views > 0 && <Text style={{ fontSize: 8, color: 'rgba(255,255,255,0.5)' }}>{lang === 'ko' ? `${views}회` : `${views}v`}</Text>}
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
             </View>
           </>
         ) : totalResults === 0 ? (
           /* ── No results ── */
-          <View style={{ alignItems: 'center', paddingTop: 60, gap: 10 }}>
-            <Text style={{ fontSize: 36 }}>🔍</Text>
-            <Text style={{ fontSize: 15, color: C.textDim, fontWeight: '600' }}>
+          <View style={{ alignItems: 'center', paddingTop: 60, gap: 12 }}>
+            <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: `${barNeonColor}15`, borderWidth: 1, borderColor: `${barNeonColor}35`, alignItems: 'center', justifyContent: 'center' }}>
+              <Svg width={28} height={28} viewBox="0 0 24 24" fill="none">
+                <Circle cx="11" cy="11" r="7" stroke={barNeonColor} strokeWidth={1.5} strokeOpacity={0.7}/>
+                <Path d="M17 17L21 21" stroke={barNeonColor} strokeWidth={1.5} strokeLinecap="round" strokeOpacity={0.7}/>
+                <Path d="M9 11H13M11 9V13" stroke={barNeonColor} strokeWidth={1.5} strokeLinecap="round" strokeOpacity={0.5}/>
+              </Svg>
+            </View>
+            <Text style={{ fontSize: 15, color: C.text, fontWeight: '700' }}>
               {q
                 ? (lang === 'ko' ? `"${query}" 결과 없음` : `No results for "${query}"`)
                 : (lang === 'ko' ? '결과가 없어요.' : 'No results.')}
             </Text>
-            <Text style={{ fontSize: 12, color: C.textDim, opacity: 0.6 }}>
+            <Text style={{ fontSize: 12, color: C.textDim }}>
               {lang === 'ko' ? '다른 키워드로 검색해 보세요.' : 'Try a different keyword.'}
             </Text>
           </View>
         ) : (
           /* ── Results ── */
           <>
-            {/* Result count — only show when there's a query */}
             {q !== '' && (
-              <Text style={{ fontSize: 11, color: C.textDim, marginBottom: 14 }}>
-                {lang === 'ko' ? `${totalResults}개 결과` : `${totalResults} result${totalResults !== 1 ? 's' : ''}`}
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16 }}>
+                <View style={{ width: 3, height: 12, borderRadius: 2, backgroundColor: barNeonColor }} />
+                <Text style={{ fontSize: 11, color: C.textDim, fontWeight: '700' }}>
+                  {lang === 'ko' ? `${totalResults}개 결과` : `${totalResults} result${totalResults !== 1 ? 's' : ''}`}
+                </Text>
+              </View>
             )}
 
             {showSpirits && matchedSpirits.length > 0 && (
               <>
-                <Text style={{ fontSize: 11, fontWeight: '800', color: C.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 10 }}>
-                  {lang === 'ko' ? '주류' : 'Spirits'}
-                </Text>
-                {matchedSpirits.map(s => <SpiritCard key={s.id} spirit={s} lang={lang} onPress={() => setSelectedSpirit(s)} />)}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                  <View style={{ width: 3, height: 14, borderRadius: 2, backgroundColor: barNeonColor }} />
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: C.textDim, letterSpacing: 1.1, textTransform: 'uppercase' }}>
+                    {lang === 'ko' ? '주류' : 'Spirits'}
+                  </Text>
+                </View>
+                {matchedSpirits.map(s => <SpiritCard key={s.id} spirit={s} lang={lang} onPress={() => { incrementSpiritView(s.id); setSelectedSpirit(s); }} />)}
               </>
             )}
 
             {showRecipes && matchedRecipes.length > 0 && (
               <>
-                <Text style={{ fontSize: 11, fontWeight: '800', color: C.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 10, marginTop: matchedSpirits.length > 0 ? 14 : 0 }}>
-                  {lang === 'ko' ? '레시피' : 'Recipes'}
-                </Text>
-                {matchedRecipes.map(r => <SearchRecipeCard key={r.id} recipe={r} lang={lang} onPress={() => setSelectedRecipe(r)} />)}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10, marginTop: matchedSpirits.length > 0 ? 18 : 0 }}>
+                  <View style={{ width: 3, height: 14, borderRadius: 2, backgroundColor: barNeonColor }} />
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: C.textDim, letterSpacing: 1.1, textTransform: 'uppercase' }}>
+                    {lang === 'ko' ? '레시피' : 'Recipes'}
+                  </Text>
+                </View>
+                {matchedRecipes.map(r => <SearchRecipeCard key={r.id} recipe={r} lang={lang} onPress={() => { incrementRecipeView(r.id); setSelectedRecipe(r); }} />)}
               </>
             )}
 
             {showFlavors && matchedFlavors.length > 0 && (
               <>
-                <Text style={{ fontSize: 11, fontWeight: '800', color: C.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 10, marginTop: (matchedSpirits.length + matchedRecipes.length) > 0 ? 14 : 0 }}>
-                  {lang === 'ko' ? '풍미' : 'Flavor'}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10, marginTop: (matchedSpirits.length + matchedRecipes.length) > 0 ? 18 : 0 }}>
+                  <View style={{ width: 3, height: 14, borderRadius: 2, backgroundColor: barNeonColor }} />
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: C.textDim, letterSpacing: 1.1, textTransform: 'uppercase' }}>
+                    {lang === 'ko' ? '풍미' : 'Flavor'}
+                  </Text>
+                </View>
                 {matchedFlavors.map(tag => (
                   <FlavorCard key={tag.id} tag={tag} lang={lang} onPress={() => setSelectedFlavor(tag)} />
                 ))}
@@ -8387,7 +10488,7 @@ function ArchiveBarCard({ post, lang, onPress }: { post: BarPost; lang: Lang; on
           <Text style={{ fontSize: 11, fontWeight: '700', color: C.text }} numberOfLines={1}>
             {lang === 'ko' ? post.barNameKo : post.barName}
           </Text>
-          <Text style={{ fontSize: 9, color: C.textDim }} numberOfLines={1}>{post.followers} followers</Text>
+          <Text style={{ fontSize: 9, color: C.textDim }} numberOfLines={1}>{post.followers} ♥</Text>
         </View>
         <SaveBtn saved={savedBarIds.includes(post.id)} onPress={() => toggleSavedBar(post.id)} />
       </View>
@@ -8395,49 +10496,61 @@ function ArchiveBarCard({ post, lang, onPress }: { post: BarPost; lang: Lang; on
   );
 }
 
-function SpiritGridCell({ spirit }: { spirit: SearchSpirit }) {
+function SpiritGridCell({ spirit, onPress }: { spirit: SearchSpirit; onPress?: () => void }) {
   const C = useColors();
   const [failed, setFailed] = useState(false);
-  const cellSize = Math.floor(SCREEN_W / 3);
+  const cellW = Math.floor(SCREEN_W / 3);
+  const cellH = Math.floor(cellW * 1.25);
+  const imgW  = Math.floor(cellW * 0.58);
+  const imgH  = Math.floor(imgW * 2.2);
   return (
-    <View style={{ width: cellSize, height: cellSize, backgroundColor: `${C.primary}12`, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+    <TouchableOpacity activeOpacity={0.85} onPress={onPress}
+      style={{ width: cellW, height: cellH, backgroundColor: `${C.primary}12`, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
       {!failed ? (
         <ExpoImage
           source={{ uri: `https://www.thecocktaildb.com/images/ingredients/${encodeURIComponent(spirit.apiName)}-Medium.png` }}
-          style={{ width: cellSize * 0.62, height: cellSize * 0.82 }}
+          style={{ width: imgW, height: imgH }}
           contentFit="contain"
           onError={() => setFailed(true)}
         />
       ) : (
-        <Text style={{ fontSize: 28 }}>🥃</Text>
+        <SpiritCutoutSvg apiName={spirit.apiName} spiritType={spirit.spiritType} width={imgW} height={imgH} />
       )}
-      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.40)', paddingHorizontal: 5, paddingVertical: 4 }}>
-        <Text style={{ fontSize: 9, fontWeight: '700', color: '#fff' }} numberOfLines={1}>{spirit.brand}</Text>
+      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.42)', paddingHorizontal: 5, paddingVertical: 5 }}>
+        <Text style={{ fontSize: 9, fontWeight: '700', color: '#fff' }} numberOfLines={1}>{spirit.name}</Text>
+        <Text style={{ fontSize: 8, color: 'rgba(255,255,255,0.65)', marginTop: 1 }} numberOfLines={1}>{spirit.brand}</Text>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
-function RecipeGridCell({ recipe, lang }: { recipe: Recipe; lang: Lang }) {
+function RecipeGridCell({ recipe, lang, onPress }: { recipe: Recipe; lang: Lang; onPress?: () => void }) {
   const [failed, setFailed] = useState(false);
-  const cellSize = Math.floor(SCREEN_W / 3);
+  const cellW = Math.floor(SCREEN_W / 3);
+  const cellH = Math.floor(cellW * 1.25);
+  const imgW  = Math.floor(cellW * 0.58);
+  const imgH  = Math.floor(imgW * 2.2);
   const showImg = !!recipe.heroApiName && !failed;
   return (
-    <View style={{ width: cellSize, height: cellSize, backgroundColor: `${recipe.color}22`, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-      {showImg ? (
+    <TouchableOpacity activeOpacity={0.85} onPress={onPress}
+      style={{ width: cellW, height: cellH, backgroundColor: `${recipe.color}22`, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+      {recipe.simSnapshot ? (
+        <MiniGlassThumbnail snapshot={recipe.simSnapshot} width={imgW * 0.9} height={imgH * 0.75} />
+      ) : showImg ? (
         <ExpoImage
           source={{ uri: `https://www.thecocktaildb.com/images/ingredients/${encodeURIComponent(recipe.heroApiName!)}-Medium.png` }}
-          style={{ width: cellSize * 0.62, height: cellSize * 0.82 }}
+          style={{ width: imgW, height: imgH }}
           contentFit="contain"
           onError={() => setFailed(true)}
         />
       ) : (
         <Text style={{ fontSize: 28 }}>🍹</Text>
       )}
-      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.40)', paddingHorizontal: 5, paddingVertical: 4 }}>
+      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.42)', paddingHorizontal: 5, paddingVertical: 5 }}>
         <Text style={{ fontSize: 9, fontWeight: '700', color: '#fff' }} numberOfLines={1}>{lang === 'ko' ? recipe.nameKo : recipe.name}</Text>
+        <Text style={{ fontSize: 8, color: 'rgba(255,255,255,0.65)', marginTop: 1 }} numberOfLines={1}>{recipe.category}</Text>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -8521,7 +10634,7 @@ export function ArchiveRecipeCard({ recipe, lang }: { recipe: Recipe; lang: Lang
 // TASTE GENOME VIEW
 // ─────────────────────────────────────────────────────────────────
 function TasteGenomeView({ lang }: { lang: Lang }) {
-  const { journalEntries, inventoryItems } = useAppStore();
+  const { journalEntries, inventoryItems, barNeonColor } = useAppStore();
   const C      = useColors();
   const styles = useStyles();
   const t      = TEXTS[lang];
@@ -8532,11 +10645,11 @@ function TasteGenomeView({ lang }: { lang: Lang }) {
   return (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
       {/* Genome radar card */}
-      <View style={styles.genomeCard}>
+      <View style={[styles.genomeCard, { borderColor: `${barNeonColor}45` }]}>
         <Text style={styles.genomeSeclbl}>{t.genomeLabel}</Text>
         {genome ? (
           <>
-            <RadarChart profile={genome} labels={t.radarLabels} size={200} />
+            <RadarChart profile={genome} labels={t.radarLabels} size={200} color={barNeonColor} />
             <Text style={styles.genomeInsight}>{insight}</Text>
           </>
         ) : (
@@ -8554,7 +10667,7 @@ function TasteGenomeView({ lang }: { lang: Lang }) {
         {t.genomeJournal}
       </Text>
       {journalEntries.length === 0 ? (
-        <View style={{ marginHorizontal: 20, padding: 24, alignItems: 'center', backgroundColor: C.surfaceHi, borderRadius: 14, borderWidth: 1, borderColor: C.border }}>
+        <View style={{ marginHorizontal: 20, padding: 24, alignItems: 'center', backgroundColor: C.surfaceHi, borderRadius: 14, borderWidth: 1, borderColor: `${barNeonColor}45` }}>
           <Text style={{ fontSize: 26, marginBottom: 8 }}>📖</Text>
           <Text style={{ fontSize: 13, color: C.textDim, textAlign: 'center', lineHeight: 20 }}>
             {t.genomeEmpty}
@@ -8562,15 +10675,15 @@ function TasteGenomeView({ lang }: { lang: Lang }) {
         </View>
       ) : (
         journalEntries.map(entry => (
-          <View key={entry.id} style={styles.journalCard}>
+          <View key={entry.id} style={[styles.journalCard, { borderColor: `${barNeonColor}45` }]}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <Text style={{ fontSize: 15, fontWeight: '700', color: C.text, flex: 1, lineHeight: 20 }}>{entry.mixName}</Text>
-              <Text style={{ fontSize: 13, color: C.accent }}>{'★'.repeat(entry.rating)}</Text>
+              <Text style={{ fontSize: 13, color: barNeonColor }}>{'★'.repeat(entry.rating)}</Text>
             </View>
             <Text style={{ fontSize: 11, color: C.textDim, marginTop: 3 }}>{entry.savedAt}</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 8 }}>
               {entry.tags.map(tag => (
-                <Text key={tag} style={[styles.journalTag, { color: C.accent, backgroundColor: `${C.accent}14` }]}>{tag}</Text>
+                <Text key={tag} style={[styles.journalTag, { color: C.textDim, backgroundColor: `${barNeonColor}18` }]}>{tag}</Text>
               ))}
             </View>
           </View>
@@ -8580,25 +10693,158 @@ function TasteGenomeView({ lang }: { lang: Lang }) {
   );
 }
 
+// 6개 프리셋 아바타 (OntheRock 테마, 80×80 원 내부 60×60 드로잉)
+const PROFILE_AVATAR_COUNT = 6;
+function ProfileAvatarIcon({ idx, size }: { idx: number; size: number }) {
+  const s = size, cx = s / 2;
+  const scale = s / 60;
+  const sc = (v: number) => v * scale;
+
+  if (idx === 0) {
+    // 온더락 글라스 (시그니처)
+    const gt = sc(10), gb = sc(50), wt = sc(22), wb = sc(17);
+    return (
+      <Svg width={s} height={s} viewBox={`0 0 ${s} ${s}`}>
+        <Path d={`M ${cx-wt} ${gt} L ${cx+wt} ${gt} L ${cx+wb} ${gb} L ${cx-wb} ${gb} Z`}
+          fill="rgba(255,255,255,0.12)" stroke="rgba(255,255,255,0.65)" strokeWidth={sc(1.6)} />
+        <Line x1={cx-wt} y1={gt} x2={cx+wt} y2={gt} stroke="rgba(255,255,255,0.85)" strokeWidth={sc(2)} strokeLinecap="round" />
+        {/* Liquid */}
+        <Path d={`M ${cx-wt+sc(2)} ${gt+sc(22)} L ${cx+wt-sc(2)} ${gt+sc(22)} L ${cx+wb-sc(1)} ${gb-sc(1)} L ${cx-wb+sc(1)} ${gb-sc(1)} Z`}
+          fill="rgba(200,120,30,0.72)" />
+        {/* Ice */}
+        <SvgRect x={cx-sc(10)} y={gb-sc(16)} width={sc(8)} height={sc(5)} rx={sc(1.5)}
+          fill="rgba(218,244,255,0.55)" stroke="rgba(255,255,255,0.60)" strokeWidth={sc(0.7)} />
+        <SvgRect x={cx+sc(3)} y={gb-sc(18)} width={sc(7)} height={sc(5)} rx={sc(1.5)}
+          fill="rgba(218,244,255,0.45)" stroke="rgba(255,255,255,0.50)" strokeWidth={sc(0.6)} />
+      </Svg>
+    );
+  }
+  if (idx === 1) {
+    // 마티니 글라스
+    const bowlT = sc(8), bowlB = sc(40), bowlW = sc(24);
+    return (
+      <Svg width={s} height={s} viewBox={`0 0 ${s} ${s}`}>
+        <Path d={`M ${cx-bowlW} ${bowlT} L ${cx+bowlW} ${bowlT} L ${cx} ${bowlB} Z`}
+          fill="rgba(255,255,255,0.10)" stroke="rgba(255,255,255,0.65)" strokeWidth={sc(1.5)} />
+        <Line x1={cx-bowlW} y1={bowlT} x2={cx+bowlW} y2={bowlT} stroke="rgba(255,255,255,0.85)" strokeWidth={sc(2)} strokeLinecap="round" />
+        <Line x1={cx} y1={bowlB} x2={cx} y2={bowlB+sc(10)} stroke="rgba(255,255,255,0.55)" strokeWidth={sc(1.4)} />
+        <Line x1={cx-sc(10)} y1={bowlB+sc(10)} x2={cx+sc(10)} y2={bowlB+sc(10)} stroke="rgba(255,255,255,0.55)" strokeWidth={sc(1.6)} strokeLinecap="round" />
+        {/* Liquid fill */}
+        <Path d={`M ${cx-bowlW+sc(3)} ${bowlT+sc(3)} L ${cx+bowlW-sc(3)} ${bowlT+sc(3)} L ${cx} ${bowlB-sc(3)} Z`}
+          fill="rgba(100,180,240,0.55)" />
+        {/* Olive */}
+        <Circle cx={cx} cy={bowlT+sc(8)} r={sc(4)} fill="rgba(60,140,60,0.80)" />
+        <Line x1={cx} y1={bowlT+sc(4)} x2={cx} y2={bowlT+sc(18)} stroke="rgba(200,160,40,0.80)" strokeWidth={sc(1)} strokeLinecap="round" />
+      </Svg>
+    );
+  }
+  if (idx === 2) {
+    // 하이볼 (롱드링크)
+    const ht = sc(6), hb = sc(52), hw = sc(15);
+    return (
+      <Svg width={s} height={s} viewBox={`0 0 ${s} ${s}`}>
+        <Path d={`M ${cx-hw} ${ht} L ${cx+hw} ${ht} L ${cx+hw-sc(1)} ${hb} L ${cx-hw+sc(1)} ${hb} Z`}
+          fill="rgba(255,255,255,0.09)" stroke="rgba(255,255,255,0.60)" strokeWidth={sc(1.5)} />
+        <Line x1={cx-hw} y1={ht} x2={cx+hw} y2={ht} stroke="rgba(255,255,255,0.85)" strokeWidth={sc(2)} strokeLinecap="round" />
+        {/* Liquid */}
+        <Path d={`M ${cx-hw+sc(1.5)} ${ht+sc(20)} L ${cx+hw-sc(1.5)} ${ht+sc(20)} L ${cx+hw-sc(2.5)} ${hb-sc(1)} L ${cx-hw+sc(2.5)} ${hb-sc(1)} Z`}
+          fill="rgba(80,200,160,0.55)" />
+        {/* Straw */}
+        <SvgRect x={cx+sc(4)} y={ht-sc(5)} width={sc(3.5)} height={hb-ht+sc(10)} rx={sc(1.5)}
+          fill="rgba(255,120,80,0.85)" />
+        {/* Ice */}
+        <SvgRect x={cx-sc(10)} y={hb-sc(22)} width={sc(7)} height={sc(5)} rx={sc(1)}
+          fill="rgba(218,244,255,0.45)" stroke="rgba(255,255,255,0.50)" strokeWidth={sc(0.6)} />
+      </Svg>
+    );
+  }
+  if (idx === 3) {
+    // 와인 글라스
+    const wt2 = sc(7), wb2 = sc(38), wr = sc(16);
+    return (
+      <Svg width={s} height={s} viewBox={`0 0 ${s} ${s}`}>
+        <Path d={`M ${cx-wr} ${wt2} C ${cx-wr} ${wb2-sc(4)} ${cx+wr} ${wb2-sc(4)} ${cx+wr} ${wt2}`}
+          fill="rgba(160,30,60,0.45)" stroke="rgba(255,255,255,0.55)" strokeWidth={sc(1.4)} />
+        <Path d={`M ${cx-wr} ${wt2} C ${cx-sc(8)} ${wb2} ${cx+sc(8)} ${wb2} ${cx+wr} ${wt2}`}
+          fill="none" stroke="rgba(255,255,255,0.55)" strokeWidth={sc(1.4)} />
+        <Line x1={cx-wr} y1={wt2} x2={cx+wr} y2={wt2} stroke="rgba(255,255,255,0.80)" strokeWidth={sc(2)} strokeLinecap="round" />
+        <Line x1={cx} y1={wb2} x2={cx} y2={wb2+sc(10)} stroke="rgba(255,255,255,0.50)" strokeWidth={sc(1.4)} />
+        <Line x1={cx-sc(10)} y1={wb2+sc(10)} x2={cx+sc(10)} y2={wb2+sc(10)} stroke="rgba(255,255,255,0.50)" strokeWidth={sc(1.6)} strokeLinecap="round" />
+      </Svg>
+    );
+  }
+  if (idx === 4) {
+    // 칵테일 쉐이커
+    const shT = sc(5), shB = sc(52), shW = sc(14), shMW = sc(17);
+    return (
+      <Svg width={s} height={s} viewBox={`0 0 ${s} ${s}`}>
+        {/* Cap */}
+        <Path d={`M ${cx-shW+sc(2)} ${shT+sc(12)} L ${cx-shW} ${shT+sc(18)} L ${cx+shW} ${shT+sc(18)} L ${cx+shW-sc(2)} ${shT+sc(12)} C ${cx+shW-sc(2)} ${shT+sc(4)} ${cx+shW-sc(6)} ${shT} ${cx} ${shT} C ${cx-shW+sc(6)} ${shT} ${cx-shW+sc(2)} ${shT+sc(4)} ${cx-shW+sc(2)} ${shT+sc(12)} Z`}
+          fill="rgba(255,255,255,0.22)" stroke="rgba(255,255,255,0.60)" strokeWidth={sc(1.3)} />
+        {/* Body */}
+        <Path d={`M ${cx-shW} ${shT+sc(18)} L ${cx-shMW} ${shT+sc(30)} L ${cx-shMW+sc(3)} ${shB} L ${cx+shMW-sc(3)} ${shB} L ${cx+shMW} ${shT+sc(30)} L ${cx+shW} ${shT+sc(18)} Z`}
+          fill="rgba(255,255,255,0.14)" stroke="rgba(255,255,255,0.58)" strokeWidth={sc(1.3)} />
+        {/* Stripe */}
+        <Line x1={cx-shMW+sc(1)} y1={shT+sc(35)} x2={cx+shMW-sc(1)} y2={shT+sc(35)} stroke="rgba(255,255,255,0.28)" strokeWidth={sc(1)} />
+      </Svg>
+    );
+  }
+  // idx === 5: 위스키 병 실루엣
+  const bCapW = sc(12), bNeckW = sc(9), bBodyW = sc(22), bH = sc(52);
+  const bCapT = sc(4), bNeckH = sc(10), bBodyT = bCapT+bCapW*0.5+bNeckH;
+  return (
+    <Svg width={s} height={s} viewBox={`0 0 ${s} ${s}`}>
+      <Path d={[
+        `M ${cx-bCapW/2} ${bCapT+sc(4)}`,
+        `L ${cx-bNeckW/2} ${bCapT+sc(4)} L ${cx-bNeckW/2} ${bBodyT}`,
+        `C ${cx-bNeckW/2} ${bBodyT+sc(5)} ${cx-bBodyW/2} ${bBodyT+sc(5)} ${cx-bBodyW/2} ${bBodyT+sc(6)}`,
+        `L ${cx-bBodyW/2} ${bCapT+bH-sc(3)} Q ${cx-bBodyW/2} ${bCapT+bH} ${cx} ${bCapT+bH}`,
+        `Q ${cx+bBodyW/2} ${bCapT+bH} ${cx+bBodyW/2} ${bCapT+bH-sc(3)}`,
+        `L ${cx+bBodyW/2} ${bBodyT+sc(6)}`,
+        `C ${cx+bBodyW/2} ${bBodyT+sc(5)} ${cx+bNeckW/2} ${bBodyT+sc(5)} ${cx+bNeckW/2} ${bBodyT}`,
+        `L ${cx+bNeckW/2} ${bCapT+sc(4)} L ${cx+bCapW/2} ${bCapT+sc(4)}`,
+        `L ${cx+bCapW/2} ${bCapT} L ${cx-bCapW/2} ${bCapT} Z`,
+      ].join(' ')}
+        fill="rgba(180,100,20,0.60)" stroke="rgba(255,255,255,0.58)" strokeWidth={sc(1.3)} />
+      <SvgRect x={cx-bBodyW/2+sc(3)} y={bBodyT+sc(12)} width={bBodyW-sc(6)} height={bH*0.38} rx={sc(2)}
+        fill="rgba(255,255,255,0.18)" />
+    </Svg>
+  );
+}
+
 function ProfileScreen() {
   const {
     lang, toggleLang, theme, toggleTheme,
     barName, setBarName, myBarBio, setMyBarBio, barNeonColor,
     savedBarIds, savedSpiritIds, savedRecipeIds, inventoryItems,
+    profileAvatarIdx, setProfileAvatarIdx,
+    incrementSpiritView, incrementRecipeView,
+    setPendingTabIdx,
   } = useAppStore();
   const C       = useColors();
   const isDark  = useIsDark();
-  const styles  = useStyles();
   const t       = TEXTS[lang];
 
-  const [filter,       setFilter]       = useState<ArchiveFilter>('all');
-  const [profileView,  setProfileView]  = useState<ProfileView>('archive');
-  const [visitPost,    setVisitPost]    = useState<BarPost | null>(null);
-  const [showSettings, setShowSettings] = useState(false);
-  const [editModal,    setEditModal]    = useState(false);
-  const [heartModal,   setHeartModal]   = useState(false);
-  const [draftName,    setDraftName]    = useState('');
-  const [draftBio,     setDraftBio]     = useState('');
+  const [filter,         setFilter]         = useState<ArchiveFilter>('all');
+  const [profileView,    setProfileView]    = useState<ProfileView>('archive');
+  const [visitPost,      setVisitPost]      = useState<BarPost | null>(null);
+  const [showSettings,   setShowSettings]   = useState(false);
+  const [editModal,       setEditModal]       = useState(false);
+  const [heartModal,      setHeartModal]      = useState(false);
+  const [heartBannerOn,   setHeartBannerOn]   = useState(true);
+  const [draftName,      setDraftName]      = useState('');
+  const [draftBio,       setDraftBio]       = useState('');
+  const [draftAvatarIdx, setDraftAvatarIdx] = useState(0);
+  const [selectedSpirit, setSelectedSpirit] = useState<SearchSpirit | null>(null);
+  const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
+
+  const swipePR = useRef(PanResponder.create({
+    onMoveShouldSetPanResponder: (_, { dx, dy }) => Math.abs(dx) > Math.abs(dy) * 1.5 && Math.abs(dx) > 18,
+    onPanResponderRelease: (_, { dx }) => {
+      if (dx < -40 && profileView === 'archive') setProfileView('genome');
+      else if (dx > 40 && profileView === 'genome') setProfileView('archive');
+    },
+  })).current;
 
   const savedBars    = BAR_POSTS.filter(p => savedBarIds.includes(p.id));
   const savedSpirits = SEARCH_SPIRITS.filter(s => savedSpiritIds.includes(s.id));
@@ -8614,10 +10860,8 @@ function ProfileScreen() {
   const showSpirits = filter === 'all' || filter === 'spirits';
   const showRecipes = filter === 'all' || filter === 'recipes';
 
-  /* initials from barName */
-  const initials = barName.split(' ').map(w => w[0] ?? '').join('').slice(0, 2).toUpperCase() || 'B';
-
-  const openEdit = () => { setDraftName(barName); setDraftBio(myBarBio); setEditModal(true); };
+  const openEdit = () => { setDraftName(barName); setDraftBio(myBarBio); setDraftAvatarIdx(profileAvatarIdx); setEditModal(true); };
+  const cancelEdit = () => { setProfileAvatarIdx(draftAvatarIdx); setEditModal(false); };
   const saveEdit = () => { setBarName(draftName.trim() || barName); setMyBarBio(draftBio.trim()); setEditModal(false); };
 
   return (
@@ -8625,10 +10869,8 @@ function ProfileScreen() {
       <ScrollView showsVerticalScrollIndicator={false} stickyHeaderIndices={[]} contentContainerStyle={{ paddingBottom: 40 }}>
 
         {/* ── Top bar ── */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingTop: 14, paddingBottom: 10 }}>
-          <Text style={{ flex: 1, fontSize: 15, fontWeight: '800', color: C.text, letterSpacing: -0.3 }}>
-            {barName}
-          </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingTop: 10, paddingBottom: 4 }}>
+          <View style={{ flex: 1 }} />
           <TouchableOpacity onPress={() => setShowSettings(v => !v)}
             style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: C.surfaceHi, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' }}>
             <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
@@ -8667,34 +10909,46 @@ function ProfileScreen() {
         )}
 
         {/* ── Instagram-style profile header ── */}
-        <View style={{ paddingHorizontal: 18, paddingTop: 4, paddingBottom: 16 }}>
+        <View style={{ paddingHorizontal: 18, paddingTop: 6, paddingBottom: 6 }}>
           {/* Avatar + stats row */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
-            {/* Avatar */}
-            <View style={{ marginRight: 24 }}>
-              <Svg width={80} height={80} viewBox="0 0 80 80">
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+            {/* Avatar — tap to edit */}
+            <TouchableOpacity onPress={openEdit} style={{ marginRight: 24, width: 100, height: 100 }} activeOpacity={0.8}>
+              <Svg width={100} height={100} viewBox="0 0 100 100">
                 <Defs>
-                  <LinearGradient id="avatarGrad" x1="0" y1="0" x2="1" y2="1">
-                    <Stop offset="0" stopColor={barNeonColor} />
-                    <Stop offset="1" stopColor={isDark ? '#1a0a2e' : '#3a0a6e'} />
-                  </LinearGradient>
-                  <LinearGradient id="avatarRing" x1="0" y1="0" x2="1" y2="1">
-                    <Stop offset="0" stopColor="#f09433" />
-                    <Stop offset="0.25" stopColor="#e6683c" />
-                    <Stop offset="0.5" stopColor="#dc2743" />
-                    <Stop offset="0.75" stopColor="#cc2366" />
-                    <Stop offset="1" stopColor="#bc1888" />
+                  <LinearGradient id="avatarBg" x1="0" y1="1" x2="1" y2="0">
+                    <Stop offset="0" stopColor={barNeonColor} stopOpacity={0.22} />
+                    <Stop offset="1" stopColor={barNeonColor} stopOpacity={0.07} />
                   </LinearGradient>
                 </Defs>
-                {/* Ring border (like Instagram) */}
-                <Circle cx="40" cy="40" r="39" fill="url(#avatarRing)" />
-                <Circle cx="40" cy="40" r="35" fill={C.bg} />
-                <Circle cx="40" cy="40" r="33" fill="url(#avatarGrad)" />
-                <SvgText x="40" y="46" textAnchor="middle" fontSize="22" fontWeight="800" fill="rgba(255,255,255,0.92)">{initials}</SvgText>
+                {/* 네온 글로우 — 네온사인 텍스트 shadowRadius 18/7 비율 동일 적용 */}
+                <Circle cx="50" cy="50" r="44" fill={barNeonColor} opacity={0.03} />
+                <Circle cx="50" cy="50" r="43" fill={barNeonColor} opacity={0.06} />
+                <Circle cx="50" cy="50" r="42" fill={barNeonColor} opacity={0.09} />
+                <Circle cx="50" cy="50" r="41" fill={barNeonColor} opacity={0.14} />
+                <Circle cx="50" cy="50" r="40" fill={barNeonColor} opacity={0.42} />
+                {/* 메인 링 */}
+                <Circle cx="50" cy="50" r="39" fill={barNeonColor} />
+                {/* 배경 gap */}
+                <Circle cx="50" cy="50" r="35" fill={C.bg} />
+                {/* 아바타 배경 */}
+                <Circle cx="50" cy="50" r="33" fill="url(#avatarBg)" />
               </Svg>
-            </View>
+              {/* Avatar icon overlaid */}
+              <View style={{ position: 'absolute', top: 0, left: 0, width: 100, height: 100, alignItems: 'center', justifyContent: 'center' }}>
+                <ProfileAvatarIcon idx={profileAvatarIdx} size={52} />
+              </View>
+              {/* Gear edit badge */}
+              <View style={{ position: 'absolute', bottom: 10, right: 10, width: 22, height: 22, borderRadius: 11, backgroundColor: C.surface, borderWidth: 1.5, borderColor: C.border, alignItems: 'center', justifyContent: 'center' }}>
+                <Svg width={12} height={12} viewBox="0 0 24 24" fill="none">
+                  <Circle cx="12" cy="12" r="3" stroke={C.textDim} strokeWidth={2} fill="none" />
+                  <Path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+                    stroke={C.textDim} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                </Svg>
+              </View>
+            </TouchableOpacity>
 
-            {/* Stats */}
+            {/* Stats — 원래 레이아웃 유지 */}
             <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-around' }}>
               <View style={{ alignItems: 'center' }}>
                 <Text style={{ fontSize: 18, fontWeight: '800', color: C.text }}>{inventoryItems.length}</Text>
@@ -8704,50 +10958,58 @@ function ProfileScreen() {
                 <Text style={{ fontSize: 18, fontWeight: '800', color: C.text }}>{savedRecipes.length}</Text>
                 <Text style={{ fontSize: 11, color: C.textDim, marginTop: 1 }}>{lang === 'ko' ? '레시피' : 'Recipes'}</Text>
               </View>
-              {/* Heart stat — tappable */}
-              <TouchableOpacity style={{ alignItems: 'center' }} onPress={() => setHeartModal(true)}>
+              <TouchableOpacity style={{ alignItems: 'center' }} onPress={() => savedBars.length > 0 && setHeartModal(true)}>
                 <Text style={{ fontSize: 18, fontWeight: '800', color: C.text }}>{savedBars.length}</Text>
                 <Text style={{ fontSize: 11, color: '#ff5f7e', marginTop: 1 }}>♥ {lang === 'ko' ? '하트한 바' : 'Liked Bars'}</Text>
               </TouchableOpacity>
             </View>
+
           </View>
 
-          {/* Name + bio */}
-          <Text style={{ fontSize: 14, fontWeight: '800', color: C.text, marginBottom: 3 }}>{barName}</Text>
-          {myBarBio ? (
-            <Text style={{ fontSize: 13, color: C.textDim, lineHeight: 18, marginBottom: 12 }}>{myBarBio}</Text>
-          ) : (
-            <Text style={{ fontSize: 13, color: C.textDim, fontStyle: 'italic', marginBottom: 12, opacity: 0.5 }}>
-              {lang === 'ko' ? '바 소개를 작성해보세요' : 'Add a bar description'}
-            </Text>
-          )}
-
-          {/* Edit Profile / Bar button */}
-          <TouchableOpacity onPress={openEdit}
-            style={{
-              paddingVertical: 6,
-              borderRadius: 8,
-              borderWidth: 1,
-              borderColor: C.border,
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: C.surfaceHi,
-              marginBottom: 14,
-            }}>
-            <Text style={{ fontSize: 12, fontWeight: '700', color: C.text }}>
-              {lang === 'ko' ? '바 편집' : 'Edit Bar'}
-            </Text>
-          </TouchableOpacity>
-
+          {/* Name + bio + 마이 바 — 수평 정렬, 버튼 가운데 */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14, marginLeft: 11 }}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={{ fontSize: 14, fontWeight: '800', color: C.text, marginBottom: 4 }}>{barName}</Text>
+              {myBarBio ? (
+                <Text style={{ fontSize: 13, color: C.textDim, lineHeight: 18 }} numberOfLines={2}>{myBarBio}</Text>
+              ) : (
+                <Text style={{ fontSize: 13, color: C.textDim, fontStyle: 'italic', opacity: 0.5 }}>
+                  {lang === 'ko' ? '바 소개를 작성해보세요' : 'Add a bar description'}
+                </Text>
+              )}
+            </View>
+            <View style={{ alignItems: 'flex-start', paddingHorizontal: 12 }}>
+              <TouchableOpacity
+                onPress={() => setPendingTabIdx(0)}
+                activeOpacity={0.75}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 5,
+                  paddingVertical: 6, paddingHorizontal: 14,
+                  borderRadius: 10, borderWidth: 1,
+                  backgroundColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)',
+                  borderColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)',
+                }}
+              >
+                <Svg width={13} height={13} viewBox="0 0 24 24" fill="none">
+                  <Path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z"
+                    stroke={C.text} strokeWidth={2.2} strokeLinejoin="round" fill="none" />
+                  <Path d="M9 21V12h6v9" stroke={C.text} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+                </Svg>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: C.text }}>
+                  {lang === 'ko' ? '마이 바' : 'My Bar'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
 
           {/* View toggle — 아카이브 | 취향 DNA */}
-          <View style={[styles.genomeToggle, { marginHorizontal: 0 }]}>
+          <View {...swipePR.panHandlers} style={{ flexDirection: 'row', marginTop: 0 }}>
             {(['archive', 'genome'] as ProfileView[]).map(view => {
               const active = profileView === view;
               return (
-                <TouchableOpacity key={view} onPress={() => setProfileView(view)}
-                  style={[styles.genomeToggleTab, active && styles.genomeTabActive]}>
-                  <Text style={[styles.genomeTabTxt, active && styles.genomeTabTxtAct]}>
+                <TouchableOpacity key={view} onPress={() => setProfileView(view)} activeOpacity={0.7}
+                  style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderBottomWidth: active ? 2 : 1, borderBottomColor: active ? C.primary : C.border }}>
+                  <Text style={{ fontSize: 13, fontWeight: active ? '800' : '500', color: active ? C.text : C.textDim, letterSpacing: 0.1 }}>
                     {view === 'archive' ? t.viewArchive : t.viewGenome}
                   </Text>
                 </TouchableOpacity>
@@ -8756,54 +11018,60 @@ function ProfileScreen() {
           </View>
         </View>
 
-        {/* ── Divider ── */}
-        <View style={{ height: 1, backgroundColor: C.border }} />
-
         {/* ── Content ── */}
         {profileView === 'genome' ? (
           <TasteGenomeView lang={lang} />
         ) : (
           <View>
-            {/* ♥ Heart archive button */}
-            <View style={{ paddingHorizontal: 18 }}>
-              <TouchableOpacity
-                onPress={() => setHeartModal(true)}
-                style={{
-                  flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                  backgroundColor: isDark ? 'rgba(255,95,126,0.10)' : 'rgba(255,95,126,0.07)',
-                  borderWidth: 1, borderColor: 'rgba(255,95,126,0.30)',
-                  borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13,
-                  marginTop: 14, marginBottom: 14,
-                }}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <Text style={{ fontSize: 20 }}>♥</Text>
-                  <View>
-                    <Text style={{ fontSize: 14, fontWeight: '800', color: '#ff5f7e' }}>
-                      {lang === 'ko' ? '하트한 바 구경하기' : 'Liked Bars Archive'}
-                    </Text>
-                    <Text style={{ fontSize: 11, color: C.textDim, marginTop: 1 }}>
-                      {lang === 'ko' ? `${savedBars.length}개의 바를 저장했어요` : `${savedBars.length} bars saved`}
-                    </Text>
-                  </View>
+            {/* ♥ 하트한 바 팝업 카드 — 하트한 바가 있을 때만, 닫기 가능 */}
+            {savedBars.length > 0 && heartBannerOn && (
+              <View style={{ paddingHorizontal: 18, marginTop: 14 }}>
+                <View style={{
+                  flexDirection: 'row', alignItems: 'center',
+                  backgroundColor: isDark ? 'rgba(255,95,126,0.12)' : 'rgba(255,95,126,0.08)',
+                  borderWidth: 1, borderColor: 'rgba(255,95,126,0.32)',
+                  borderRadius: 14,
+                }}>
+                  <TouchableOpacity
+                    onPress={() => setHeartModal(true)}
+                    activeOpacity={0.75}
+                    style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 13 }}
+                  >
+                    <Text style={{ fontSize: 18 }}>♥</Text>
+                    <View>
+                      <Text style={{ fontSize: 14, fontWeight: '800', color: '#ff5f7e' }}>
+                        {lang === 'ko' ? '하트한 바 구경하기' : 'Liked Bars Archive'}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: C.textDim, marginTop: 1 }}>
+                        {lang === 'ko' ? `${savedBars.length}개의 바를 저장했어요` : `${savedBars.length} bars saved`}
+                      </Text>
+                    </View>
+                    <Text style={{ color: '#ff5f7e', fontSize: 16, marginLeft: 'auto' }}>›</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => setHeartBannerOn(false)}
+                    hitSlop={{ top: 10, bottom: 10, left: 6, right: 14 }}
+                    style={{ paddingHorizontal: 12, paddingVertical: 13 }}
+                  >
+                    <Text style={{ color: C.textDim, fontSize: 14, fontWeight: '500' }}>✕</Text>
+                  </TouchableOpacity>
                 </View>
-                <Text style={{ color: C.textDim, fontSize: 16 }}>›</Text>
-              </TouchableOpacity>
-            </View>
+              </View>
+            )}
 
             {/* Filter chips */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 40, marginBottom: 12, paddingLeft: 18 }} contentContainerStyle={{ gap: 8, flexDirection: 'row', paddingRight: 18 }}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 40, marginTop: 14, marginBottom: 12, paddingLeft: 18 }} contentContainerStyle={{ gap: 8, flexDirection: 'row', paddingRight: 18 }}>
               {FILTERS.map(f => {
                 const active = filter === f.id;
                 return (
                   <TouchableOpacity key={f.id} onPress={() => setFilter(f.id)}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 13, paddingVertical: 6, borderRadius: 20, backgroundColor: active ? C.primary : C.surfaceHi, borderWidth: 1, borderColor: active ? C.primary : C.border }}>
-                    <Text style={{ fontSize: 12, fontWeight: '700', color: active ? C.bg : C.textDim }}>
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 13, paddingVertical: 6, borderRadius: 20, backgroundColor: active ? `${barNeonColor}28` : C.surfaceHi, borderWidth: 1, borderColor: active ? barNeonColor : C.border }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: active ? barNeonColor : C.textDim }}>
                       {lang === 'ko' ? f.labelKo : f.label}
                     </Text>
                     {f.count > 0 && (
-                      <View style={{ width: 16, height: 16, borderRadius: 8, backgroundColor: active ? `${C.bg}30` : `${C.primary}20`, alignItems: 'center', justifyContent: 'center' }}>
-                        <Text style={{ fontSize: 9, fontWeight: '800', color: active ? C.bg : C.primary }}>{f.count}</Text>
+                      <View style={{ width: 16, height: 16, borderRadius: 8, backgroundColor: active ? `${barNeonColor}25` : `${barNeonColor}15`, alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ fontSize: 9, fontWeight: '800', color: active ? barNeonColor : C.textDim }}>{f.count}</Text>
                       </View>
                     )}
                   </TouchableOpacity>
@@ -8828,7 +11096,7 @@ function ProfileScreen() {
                     {savedSpirits.length === 0
                       ? <View style={{ paddingHorizontal: 18 }}><ArchiveEmptyState icon="🥃" label={lang === 'ko' ? '저장한 주류가 없어요' : 'No saved spirits'} /></View>
                       : <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 1, backgroundColor: C.border, marginBottom: 1 }}>
-                          {savedSpirits.map(s => <SpiritGridCell key={s.id} spirit={s} />)}
+                          {savedSpirits.map(s => <SpiritGridCell key={s.id} spirit={s} onPress={() => { incrementSpiritView(s.id); setSelectedSpirit(s); }} />)}
                         </View>
                     }
                   </>
@@ -8843,7 +11111,7 @@ function ProfileScreen() {
                     {savedRecipes.length === 0
                       ? <View style={{ paddingHorizontal: 18 }}><ArchiveEmptyState icon="🍹" label={lang === 'ko' ? '저장한 레시피가 없어요' : 'No saved recipes'} /></View>
                       : <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 1, backgroundColor: C.border }}>
-                          {savedRecipes.map(r => <RecipeGridCell key={r.id} recipe={r} lang={lang} />)}
+                          {savedRecipes.map(r => <RecipeGridCell key={r.id} recipe={r} lang={lang} onPress={() => { incrementRecipeView(r.id); setSelectedRecipe(r); }} />)}
                         </View>
                     }
                   </>
@@ -8855,16 +11123,30 @@ function ProfileScreen() {
       </ScrollView>
 
       {/* ── 프로필 편집 모달 ── */}
-      <Modal visible={editModal} animationType="slide" transparent onRequestClose={() => setEditModal(false)}>
+      <Modal visible={editModal} animationType="slide" transparent onRequestClose={cancelEdit}>
         <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => { Keyboard.dismiss(); setEditModal(false); }} />
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => { Keyboard.dismiss(); cancelEdit(); }} />
           <View style={{ backgroundColor: C.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 20, paddingTop: 20, paddingBottom: 36, borderTopWidth: 1, borderColor: C.border }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
               <Text style={{ flex: 1, fontSize: 16, fontWeight: '800', color: C.text }}>{lang === 'ko' ? '프로필 편집' : 'Edit Profile'}</Text>
-              <TouchableOpacity onPress={() => setEditModal(false)}>
+              <TouchableOpacity onPress={cancelEdit}>
                 <Text style={{ color: C.textDim, fontSize: 15 }}>✕</Text>
               </TouchableOpacity>
             </View>
+            {/* Avatar picker */}
+            <Text style={{ fontSize: 12, fontWeight: '700', color: C.textDim, marginBottom: 10 }}>{lang === 'ko' ? '프로필 사진' : 'Profile Photo'}</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 }}>
+              {Array.from({ length: PROFILE_AVATAR_COUNT }).map((_, i) => {
+                const selected = profileAvatarIdx === i;
+                return (
+                  <TouchableOpacity key={i} onPress={() => setProfileAvatarIdx(i)} activeOpacity={0.75}
+                    style={{ width: 50, height: 50, borderRadius: 25, borderWidth: selected ? 2.5 : 1.5, borderColor: selected ? barNeonColor : C.border, backgroundColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)', alignItems: 'center', justifyContent: 'center' }}>
+                    <ProfileAvatarIcon idx={i} size={34} />
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
             <Text style={{ fontSize: 12, fontWeight: '700', color: C.textDim, marginBottom: 6 }}>{lang === 'ko' ? '바 이름' : 'Bar Name'}</Text>
             <TextInput
               value={draftName}
@@ -8895,7 +11177,7 @@ function ProfileScreen() {
       <Modal visible={heartModal} animationType="slide" transparent={false} onRequestClose={() => setHeartModal(false)}>
         <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: C.bg }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingTop: 14, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: C.border }}>
-            <TouchableOpacity onPress={() => setHeartModal(false)} style={{ marginRight: 14 }}>
+            <TouchableOpacity onPress={() => setHeartModal(false)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} style={{ marginRight: 14, paddingVertical: 4 }}>
               <Text style={{ fontSize: 22, color: C.text }}>‹</Text>
             </TouchableOpacity>
             <Text style={{ fontSize: 16, fontWeight: '800', color: C.text, flex: 1 }}>
@@ -8904,25 +11186,24 @@ function ProfileScreen() {
             <Text style={{ fontSize: 13, color: C.textDim }}>{savedBars.length}</Text>
           </View>
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 32 }}>
-            {savedBars.length === 0 ? (
-              <ArchiveEmptyState icon="♥" label={lang === 'ko' ? '하트한 바가 없어요' : 'No liked bars yet'} />
-            ) : (
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                <View style={{ flex: 1 }}>
-                  {savedBars.filter((_, i) => i % 2 === 0).map(p => (
-                    <ArchiveBarCard key={p.id} post={p} lang={lang} onPress={(post) => { setHeartModal(false); setVisitPost(post); }} />
-                  ))}
-                </View>
-                <View style={{ flex: 1 }}>
-                  {savedBars.filter((_, i) => i % 2 === 1).map(p => (
-                    <ArchiveBarCard key={p.id} post={p} lang={lang} onPress={(post) => { setHeartModal(false); setVisitPost(post); }} />
-                  ))}
-                </View>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <View style={{ flex: 1 }}>
+                {savedBars.filter((_, i) => i % 2 === 0).map(p => (
+                  <ArchiveBarCard key={p.id} post={p} lang={lang} onPress={(post) => { setHeartModal(false); setTimeout(() => setVisitPost(post), 350); }} />
+                ))}
               </View>
-            )}
+              <View style={{ flex: 1 }}>
+                {savedBars.filter((_, i) => i % 2 === 1).map(p => (
+                  <ArchiveBarCard key={p.id} post={p} lang={lang} onPress={(post) => { setHeartModal(false); setTimeout(() => setVisitPost(post), 350); }} />
+                ))}
+              </View>
+            </View>
           </ScrollView>
         </SafeAreaView>
       </Modal>
+
+      <SpiritDetailModal spirit={selectedSpirit} visible={selectedSpirit !== null} onClose={() => setSelectedSpirit(null)} />
+      <RecipeDetailModal recipe={selectedRecipe} visible={selectedRecipe !== null} onClose={() => setSelectedRecipe(null)} />
 
       <VisitorBarModal
         post={visitPost}
